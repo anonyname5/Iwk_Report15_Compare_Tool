@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iwk_finance_app
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
+      - DB_CONNECTION=oracle
+      - DB_HOST=oracle
+      - DB_PORT=1521
+      - DB_DATABASE=XEPDB1
+      - DB_USERNAME=iwk_finance
+      - DB_PASSWORD=iwk_password
+      - ORACLE_TNS_ADMIN=/var/www/html/tnsnames
+    volumes:
+      - ./:/var/www/html
+      - ./tnsnames:/var/www/html/tnsnames
+    depends_on:
+      - oracle
+    networks:
+      - iwk_network
+    ports:
+      - "8000:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/info.php"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  oracle:
+    image: container-registry.oracle.com/database/express:21.3.0-xe
+    container_name: iwk_oracle
+    environment:
+      - ORACLE_PWD=oracle_root_password
+      - ORACLE_CHARACTERSET=AL32UTF8
+      - ORACLE_EDITION=express
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+      - ./oracle_setup:/opt/oracle/scripts/setup
+      - ./oracle_startup:/opt/oracle/scripts/startup
+    ports:
+      - "1521:1521"
+      - "5500:5500"
+    shm_size: '2gb'
+    restart: unless-stopped
+    networks:
+      - iwk_network
+
+networks:
+  iwk_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+
+volumes:
+  oracle_data: 
