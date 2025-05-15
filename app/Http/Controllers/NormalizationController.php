@@ -35,16 +35,23 @@ class NormalizationController extends Controller
     {
         Log::info('Starting file normalization process');
         
-        $request->validate([
-            'br_file' => 'required|file|mimes:xlsx,xls,csv'
-        ]);
-
         try {
+            $request->validate([
+                'br_file' => 'required|file|mimes:xlsx,xls,csv|max:10240' // Add 10MB max size limit
+            ]);
+
             $file = $request->file('br_file');
             $originalFileName = $file->getClientOriginalName();
             $fileNameWithoutExtension = pathinfo($originalFileName, PATHINFO_FILENAME);
             
             Log::info('Received file: ' . $originalFileName . ' (' . $file->getSize() . ' bytes)');
+            Log::info('File MIME type: ' . $file->getMimeType());
+            
+            // Check if file is readable
+            if (!$file->isReadable()) {
+                Log::error('File is not readable');
+                throw new \Exception("File is not readable");
+            }
             
             $normalizedPath = $this->normalizeBrFile($file, $fileNameWithoutExtension);
             Log::info('Normalization complete. Output file: ' . $normalizedPath);
@@ -80,74 +87,95 @@ class NormalizationController extends Controller
     private function normalizeBrFile($file, $originalFileName = null)
     {
         Log::info('Loading Excel file into array');
-        $rows = Excel::toArray(null, $file)[0];
-        Log::info('Loaded ' . count($rows) . ' rows from Excel file');
         
-        $headerRows = array_slice($rows, 0, 6);
-        $dataRows = array_slice($rows, 6);
-        Log::info('Extracted ' . count($headerRows) . ' header rows and ' . count($dataRows) . ' data rows');
-
-        // Group by Cost Center
-        $costCenters = [];
-        foreach ($dataRows as $row) {
-            if (isset($row[1]) && !empty($row[1])) {
-                $costCenters[$row[1]][] = $row;
-            }
-        }
-        Log::info('Identified ' . count($costCenters) . ' unique cost centers');
-
-        $normalizedData = [];
-
-        foreach ($costCenters as $cc => $ccRows) {
-            Log::info('Processing cost center: ' . $cc . ' with ' . count($ccRows) . ' rows');
-            $ccData = [];
-            $mainTotalRows = []; // Store all main description totals for this cost center
+        try {
+            // Use PhpSpreadsheet directly for better memory management
+            $reader = IOFactory::createReaderForFile($file->getPathname());
+            $reader->setReadDataOnly(true);
+            $reader->setReadEmptyCells(false);
             
-            foreach (self::MAIN_DESCRIPTIONS as $mainDesc) {
-                $fullMainDesc = "$cc $mainDesc"; // Combine cost center with description
-                Log::info('  Processing main description: ' . $mainDesc);
-                $blockData = $this->processMainDescriptionBlock($ccRows, $fullMainDesc, $mainDesc, $cc);
-                Log::info('  Generated ' . count($blockData) . ' rows for ' . $mainDesc);
-                
-                // Store the main total row (last row in block data)
-                if (!empty($blockData)) {
-                    $mainTotalRows[] = $blockData[count($blockData) - 1];
+            // Load the spreadsheet
+            $spreadsheet = $reader->load($file->getPathname());
+            $worksheet = $spreadsheet->getActiveSheet();
+            
+            // Get all rows as array
+            $rows = $worksheet->toArray();
+            Log::info('Loaded ' . count($rows) . ' rows from Excel file');
+            
+            // Free up memory
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
+            
+            $headerRows = array_slice($rows, 0, 6);
+            $dataRows = array_slice($rows, 6);
+            Log::info('Extracted ' . count($headerRows) . ' header rows and ' . count($dataRows) . ' data rows');
+
+            // Group by Cost Center
+            $costCenters = [];
+            foreach ($dataRows as $row) {
+                if (isset($row[1]) && !empty($row[1])) {
+                    $costCenters[$row[1]][] = $row;
                 }
+            }
+            Log::info('Identified ' . count($costCenters) . ' unique cost centers');
+
+            $normalizedData = [];
+
+            foreach ($costCenters as $cc => $ccRows) {
+                Log::info('Processing cost center: ' . $cc . ' with ' . count($ccRows) . ' rows');
+                $ccData = [];
+                $mainTotalRows = []; // Store all main description totals for this cost center
                 
-                $ccData = array_merge($ccData, $blockData);
-            }
+                foreach (self::MAIN_DESCRIPTIONS as $mainDesc) {
+                    $fullMainDesc = "$cc $mainDesc"; // Combine cost center with description
+                    Log::info('  Processing main description: ' . $mainDesc);
+                    $blockData = $this->processMainDescriptionBlock($ccRows, $fullMainDesc, $mainDesc, $cc);
+                    Log::info('  Generated ' . count($blockData) . ' rows for ' . $mainDesc);
+                    
+                    // Store the main total row (last row in block data)
+                    if (!empty($blockData)) {
+                        $mainTotalRows[] = $blockData[count($blockData) - 1];
+                    }
+                    
+                    $ccData = array_merge($ccData, $blockData);
+                }
 
-            // Add Cost Center Total
-            $ccTotal = $this->findCostCenterTotal($ccRows);
-            if ($ccTotal) {
-                Log::info('  Found existing Cost Center Total for ' . $cc);
-            } else {
-                Log::info('  Creating new Cost Center Total from main description totals');
-                $ccTotal = $this->createCcTotalRowFromMainTotals($cc, $mainTotalRows);
+                // Add Cost Center Total
+                $ccTotal = $this->findCostCenterTotal($ccRows);
+                if ($ccTotal) {
+                    Log::info('  Found existing Cost Center Total for ' . $cc);
+                } else {
+                    Log::info('  Creating new Cost Center Total from main description totals');
+                    $ccTotal = $this->createCcTotalRowFromMainTotals($cc, $mainTotalRows);
+                }
+                $ccData[] = $ccTotal;
+                
+                // Add a blank row after each cost center total for better readability
+                $blankRow = array_fill(0, self::TOTAL_COLUMNS, '');
+                $ccData[] = $blankRow;
+                Log::info('  Added blank row after cost center total');
+
+                $normalizedData = array_merge($normalizedData, $ccData);
+                Log::info('  Completed processing for cost center: ' . $cc);
             }
-            $ccData[] = $ccTotal;
             
-            // Add a blank row after each cost center total for better readability
-            $blankRow = array_fill(0, self::TOTAL_COLUMNS, '');
-            $ccData[] = $blankRow;
-            Log::info('  Added blank row after cost center total');
+            // Now process the overall totals section (rows without cost centers)
+            Log::info('Processing overall totals section (rows without cost centers)');
+            $overallTotalsData = $this->processOverallTotals($dataRows);
+            
+            // Merge with normalized data
+            if (!empty($overallTotalsData)) {
+                $normalizedData = array_merge($normalizedData, $overallTotalsData);
+                Log::info('Added ' . count($overallTotalsData) . ' overall total rows');
+            }
 
-            $normalizedData = array_merge($normalizedData, $ccData);
-            Log::info('  Completed processing for cost center: ' . $cc);
+            Log::info('Total normalized data rows: ' . count($normalizedData));
+            return $this->exportNormalizedFile($headerRows, $normalizedData, $originalFileName);
+        } catch (\Exception $e) {
+            Log::error('Processing failed: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            throw $e;
         }
-        
-        // Now process the overall totals section (rows without cost centers)
-        Log::info('Processing overall totals section (rows without cost centers)');
-        $overallTotalsData = $this->processOverallTotals($dataRows);
-        
-        // Merge with normalized data
-        if (!empty($overallTotalsData)) {
-            $normalizedData = array_merge($normalizedData, $overallTotalsData);
-            Log::info('Added ' . count($overallTotalsData) . ' overall total rows');
-        }
-
-        Log::info('Total normalized data rows: ' . count($normalizedData));
-        return $this->exportNormalizedFile($headerRows, $normalizedData, $originalFileName);
     }
 
     private function processMainDescriptionBlock($ccRows, $fullMainDesc, $baseMainDesc, $cc)
@@ -438,33 +466,47 @@ class NormalizationController extends Controller
         Log::info('Exporting ' . (count($headers) + count($data)) . ' total rows to file: ' . $filename);
 
         try {
-            // Create a custom exporter with formatting support
-            $exporter = new class(array_merge($headers, $data)) implements FromArray {
-                public function __construct(private array $data) {}
-                public function array(): array { return $this->data; }
-            };
-
-            // Use store() to save it to disk with standard options
-            Excel::store(
-                $exporter,
-                $filename,
-                'public',
-                \Maatwebsite\Excel\Excel::XLSX
-            );
+            // Create a new spreadsheet
+            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
             
-            // Apply formatting to the Excel file after it's created
-            $this->applyFormattingToExcel(Storage::disk('public')->path($filename));
+            // Write headers
+            foreach ($headers as $rowIndex => $rowData) {
+                foreach ($rowData as $colIndex => $value) {
+                    $sheet->setCellValueByColumnAndRow($colIndex + 1, $rowIndex + 1, $value);
+                }
+            }
             
-            $fullPath = Storage::disk('public')->path($filename);
-            Log::info('Excel file successfully exported to: ' . $fullPath);
+            // Write data
+            $startRow = count($headers) + 1;
+            foreach ($data as $rowIndex => $rowData) {
+                foreach ($rowData as $colIndex => $value) {
+                    $sheet->setCellValueByColumnAndRow($colIndex + 1, $startRow + $rowIndex, $value);
+                }
+            }
+            
+            // Save the file
+            $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
+            $filePath = Storage::disk('public')->path($filename);
+            $writer->save($filePath);
+            
+            // Free up memory
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
+            
+            Log::info('Excel file successfully exported to: ' . $filePath);
             
             if (Storage::disk('public')->exists($filename)) {
                 Log::info('Verified file exists in storage');
+                
+                // Apply formatting to the saved file
+                $this->applyFormattingToExcel($filePath);
+                Log::info('Applied formatting to the Excel file');
             } else {
                 Log::error('File verification failed - file does not exist in storage');
             }
             
-            return $fullPath;
+            return $filePath;
         } catch (\Exception $e) {
             Log::error('Excel export failed: ' . $e->getMessage());
             Log::error('Excel export stack trace: ' . $e->getTraceAsString());

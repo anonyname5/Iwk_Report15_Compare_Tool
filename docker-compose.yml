@@ -8,7 +8,7 @@ services:
     container_name: iwk_finance_app
     restart: unless-stopped
     environment:
-      - APP_ENV=production
+      - APP_ENV=development
       - DB_CONNECTION=oracle
       - DB_HOST=oracle
       - DB_PORT=1521
@@ -53,9 +53,6 @@ services:
 networks:
   iwk_network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.18.0.0/16
 
 volumes:
   oracle_data: 
