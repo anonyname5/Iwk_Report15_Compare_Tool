@@ -8,6 +8,7 @@ use Maatwebsite\Excel\Concerns\FromArray;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use App\Helpers\DescriptionTypesHelper;
 
 class NormalizationController extends Controller
 {
@@ -22,9 +23,19 @@ class NormalizationController extends Controller
         'Ind. No HC Totals',
     ];
 
-    const REQUIRED_SUBS = ['Connected', 'Nil', 'IST'];
     const TOTAL_COLUMNS = 35;
     const FINANCE_COL_START = 2; // Columns 0-1 are description/cost center
+    
+    /**
+     * Get description types based on CST inclusion
+     * 
+     * @param bool $includeCst Whether to include CST
+     * @return array Array of description type names
+     */
+    private function getDescriptionTypes($includeCst = false): array
+    {
+        return DescriptionTypesHelper::getTypes($includeCst);
+    }
 
     public function showUploadForm()
     {
@@ -43,9 +54,11 @@ class NormalizationController extends Controller
             $file = $request->file('br_file');
             $originalFileName = $file->getClientOriginalName();
             $fileNameWithoutExtension = pathinfo($originalFileName, PATHINFO_FILENAME);
+            $includeCst = $request->has('include_cst') && $request->input('include_cst') == '1';
             
             Log::info('Received file: ' . $originalFileName . ' (' . $file->getSize() . ' bytes)');
             Log::info('File MIME type: ' . $file->getMimeType());
+            Log::info('Include CST: ' . ($includeCst ? 'true' : 'false'));
             
             // Check if file is readable
             if (!$file->isReadable()) {
@@ -53,7 +66,7 @@ class NormalizationController extends Controller
                 throw new \Exception("File is not readable");
             }
             
-            $normalizedPath = $this->normalizeBrFile($file, $fileNameWithoutExtension);
+            $normalizedPath = $this->normalizeBrFile($file, $fileNameWithoutExtension, $includeCst);
             Log::info('Normalization complete. Output file: ' . $normalizedPath);
             
             if (!Storage::disk('public')->exists(basename($normalizedPath))) {
@@ -84,7 +97,7 @@ class NormalizationController extends Controller
         }
     }
 
-    private function normalizeBrFile($file, $originalFileName = null)
+    private function normalizeBrFile($file, $originalFileName = null, $includeCst = false)
     {
         Log::info('Loading Excel file into array');
         
@@ -129,7 +142,7 @@ class NormalizationController extends Controller
                 foreach (self::MAIN_DESCRIPTIONS as $mainDesc) {
                     $fullMainDesc = "$cc $mainDesc"; // Combine cost center with description
                     Log::info('  Processing main description: ' . $mainDesc);
-                    $blockData = $this->processMainDescriptionBlock($ccRows, $fullMainDesc, $mainDesc, $cc);
+                    $blockData = $this->processMainDescriptionBlock($ccRows, $fullMainDesc, $mainDesc, $cc, $includeCst);
                     Log::info('  Generated ' . count($blockData) . ' rows for ' . $mainDesc);
                     
                     // Store the main total row (last row in block data)
@@ -161,7 +174,7 @@ class NormalizationController extends Controller
             
             // Now process the overall totals section (rows without cost centers)
             Log::info('Processing overall totals section (rows without cost centers)');
-            $overallTotalsData = $this->processOverallTotals($dataRows);
+            $overallTotalsData = $this->processOverallTotals($dataRows, $includeCst);
             
             // Merge with normalized data
             if (!empty($overallTotalsData)) {
@@ -178,7 +191,7 @@ class NormalizationController extends Controller
         }
     }
 
-    private function processMainDescriptionBlock($ccRows, $fullMainDesc, $baseMainDesc, $cc)
+    private function processMainDescriptionBlock($ccRows, $fullMainDesc, $baseMainDesc, $cc, $includeCst = false)
     {
         $mainTotalRow = null;
         $subRows = [];
@@ -290,25 +303,26 @@ class NormalizationController extends Controller
             }
             
             // Now search for sub-rows in the safe zone
-            $subRows = $this->findSubRowsInSafeZone($ccRows, $mainRowIndex, $safeStartIndex, $cc);
+            $subRows = $this->findSubRowsInSafeZone($ccRows, $mainRowIndex, $safeStartIndex, $cc, $includeCst);
         }
 
         // Process sub-rows with financial data preservation
         Log::info('    Processing ' . count($subRows) . ' sub-rows');
-        $processedSubs = $this->processSubRows($subRows, $cc, $fullMainDesc);
+        $processedSubs = $this->processSubRows($subRows, $cc, $fullMainDesc, $includeCst);
         Log::info('    Generated ' . count($processedSubs) . ' processed sub-rows');
 
         // Create main total if missing (with aggregated financial data)
         if (!$mainTotalRow) {
             Log::info('    Creating new main total row for "' . $fullMainDesc . '"');
-            $mainTotalRow = $this->createMainTotalRow($formattedMainDesc, $cc, $processedSubs);
+            $mainTotalRow = $this->createMainTotalRow($formattedMainDesc, $cc, $processedSubs, $includeCst);
         }
 
         return array_merge($processedSubs, [$mainTotalRow]);
     }
 
-    private function processSubRows($subRows, $cc, $mainDesc)
+    private function processSubRows($subRows, $cc, $mainDesc, $includeCst = false)
     {
+        $requiredSubs = $this->getDescriptionTypes($includeCst);
         $processed = [];
         $foundSubs = [];
 
@@ -318,14 +332,14 @@ class NormalizationController extends Controller
             $cleanDesc = rtrim(str_replace('Service Level:', '', $row[0]), ':');
             $cleanDesc = trim($cleanDesc);
             
-            if (in_array($cleanDesc, self::REQUIRED_SUBS)) {
+            if (in_array($cleanDesc, $requiredSubs)) {
                 $row[0] = $cleanDesc;
                 $foundSubs[] = $cleanDesc;
                 $processed[] = $row;
                 Log::info('      Found existing sub-row: ' . $cleanDesc);
             } else {
                 // Try more flexible matching for subs
-                foreach (self::REQUIRED_SUBS as $requiredSub) {
+                foreach ($requiredSubs as $requiredSub) {
                     if (stripos($cleanDesc, $requiredSub) === 0) {
                         $row[0] = $requiredSub; // Standardize name
                         $foundSubs[] = $requiredSub;
@@ -342,7 +356,7 @@ class NormalizationController extends Controller
         }
 
         // Second pass: add missing sub-rows
-        foreach (self::REQUIRED_SUBS as $sub) {
+        foreach ($requiredSubs as $sub) {
             if (!in_array($sub, $foundSubs)) {
                 $newRow = array_fill(0, self::TOTAL_COLUMNS, 0);
                 $newRow[0] = $sub;
@@ -376,18 +390,18 @@ class NormalizationController extends Controller
             }
         }
 
-        // Sort and ensure exactly 3 rows
-        usort($processed, fn($a, $b) => 
-            array_search($a[0], self::REQUIRED_SUBS) <=> array_search($b[0], self::REQUIRED_SUBS)
-        );
+        // Sort and ensure correct number of rows
+        usort($processed, function($a, $b) use ($requiredSubs) {
+            return array_search($a[0], $requiredSubs) <=> array_search($b[0], $requiredSubs);
+        });
         
-        $result = array_slice($processed, 0, 3);
+        $result = array_slice($processed, 0, count($requiredSubs));
         Log::info('      Returning ' . count($result) . ' processed sub-rows');
         
         return $result;
     }
 
-    private function createMainTotalRow($desc, $cc, $subRows = [])
+    private function createMainTotalRow($desc, $cc, $subRows = [], $includeCst = false)
     {
         $row = array_fill(0, self::TOTAL_COLUMNS, 0);
         $row[0] = $desc; // Already contains CC prefix
@@ -619,8 +633,9 @@ class NormalizationController extends Controller
      * @param string $cc Cost center code
      * @return array Array of sub-rows
      */
-    private function findSubRowsInSafeZone($rows, $mainIndex, $safeStartIndex, $cc) 
+    private function findSubRowsInSafeZone($rows, $mainIndex, $safeStartIndex, $cc, $includeCst = false) 
     {
+        $requiredSubs = $this->getDescriptionTypes($includeCst);
         $subRows = [];
         $searchStartIndex = max($safeStartIndex, $mainIndex - 10);  // Don't go further than 10 rows back
         
@@ -640,12 +655,12 @@ class NormalizationController extends Controller
             $matchedType = null;
             
             // Check for direct matches
-            if (in_array($cleanDesc, self::REQUIRED_SUBS)) {
+            if (in_array($cleanDesc, $requiredSubs)) {
                 $isValidSubRow = true;
                 $matchedType = $cleanDesc;
             } else {
                 // Check for partial matches
-                foreach (self::REQUIRED_SUBS as $type) {
+                foreach ($requiredSubs as $type) {
                     if (stripos($cleanDesc, $type) === 0) {
                         $isValidSubRow = true;
                         $matchedType = $type;
@@ -658,7 +673,7 @@ class NormalizationController extends Controller
             if (!$isValidSubRow && stripos($rowDesc, 'Service Level:') === 0) {
                 $isValidSubRow = true;
                 // Try to determine type from Service Level: prefix
-                foreach (self::REQUIRED_SUBS as $type) {
+                foreach ($requiredSubs as $type) {
                     if (stripos($cleanDesc, $type) !== false) {
                         $matchedType = $type;
                         break;
@@ -698,7 +713,7 @@ class NormalizationController extends Controller
         });
         
         // Select one row per required type, favoring those closer to the main description
-        foreach (self::REQUIRED_SUBS as $requiredType) {
+        foreach ($requiredSubs as $requiredType) {
             // Find the closest row of this type
             $found = false;
             foreach ($potentialSubRows as $subRow) {
@@ -726,7 +741,7 @@ class NormalizationController extends Controller
      * @param array $dataRows All data rows
      * @return array Processed overall total rows
      */
-    private function processOverallTotals($dataRows)
+    private function processOverallTotals($dataRows, $includeCst = false)
     {
         $overallTotalsData = [];
         $processedMainDescs = [];
@@ -742,13 +757,14 @@ class NormalizationController extends Controller
                 $processedMainDescs[] = $mainDesc;
                 
                 // Process connected, nil, IST rows
-                $subRows = $this->findOverallSubRows($dataRows, $mainDescRows['index']);
+                $subRows = $this->findOverallSubRows($dataRows, $mainDescRows['index'], $includeCst);
                 Log::info('  Found ' . count($subRows) . ' sub-rows for overall ' . $mainDesc);
                 
                 // If we're missing any required sub-rows, create them
-                $foundSubTypes = array_map(function($row) {
+                $requiredSubs = $this->getDescriptionTypes($includeCst);
+                $foundSubTypes = array_map(function($row) use ($requiredSubs) {
                     $desc = trim($row[0]);
-                    foreach (self::REQUIRED_SUBS as $subType) {
+                    foreach ($requiredSubs as $subType) {
                         if (stripos($desc, $subType) === 0 || $desc === $subType) {
                             return $subType;
                         }
@@ -759,7 +775,7 @@ class NormalizationController extends Controller
                 // Filter out null values and create missing sub-rows
                 $foundSubTypes = array_filter($foundSubTypes);
                 
-                foreach (self::REQUIRED_SUBS as $requiredSub) {
+                foreach ($requiredSubs as $requiredSub) {
                     if (!in_array($requiredSub, $foundSubTypes)) {
                         Log::info('    Creating missing sub-row: ' . $requiredSub . ' for ' . $mainDesc);
                         // Create empty row (all zeros instead of blanks)
@@ -776,9 +792,9 @@ class NormalizationController extends Controller
                 }
                 
                 // Re-sort sub-rows to ensure proper order
-                usort($subRows, function($a, $b) {
-                    $indexA = $this->getSubRowIndex(trim($a[0]));
-                    $indexB = $this->getSubRowIndex(trim($b[0]));
+                usort($subRows, function($a, $b) use ($requiredSubs) {
+                    $indexA = $this->getSubRowIndex(trim($a[0]), $requiredSubs);
+                    $indexB = $this->getSubRowIndex(trim($b[0]), $requiredSubs);
                     return $indexA - $indexB;
                 });
                 
@@ -928,7 +944,7 @@ class NormalizationController extends Controller
      * @param int $mainDescIndex Index of the main description row
      * @return array Found sub-rows
      */
-    private function findOverallSubRows($dataRows, $mainDescIndex)
+    private function findOverallSubRows($dataRows, $mainDescIndex, $includeCst = false)
     {
         $subRows = [];
         $searchRange = 10; // Look up to 10 rows before the main description
@@ -985,9 +1001,10 @@ class NormalizationController extends Controller
                 continue;
             }
             
-            // Check if this is one of our sub-types (Connected, Nil, IST)
+            // Check if this is one of our sub-types (Connected, Nil, IST, CST)
+            $requiredSubs = $this->getDescriptionTypes($includeCst);
             $isMatch = false;
-            foreach (self::REQUIRED_SUBS as $subType) {
+            foreach ($requiredSubs as $subType) {
                 // Check exact match
                 if ($cleanDesc === $subType) {
                     // Create a standardized row with the clean description
@@ -1013,7 +1030,7 @@ class NormalizationController extends Controller
             
             // If not matched but contains one of the required sub types, try to match
             if (!$isMatch) {
-                foreach (self::REQUIRED_SUBS as $subType) {
+                foreach ($requiredSubs as $subType) {
                     if (stripos($cleanDesc, $subType) !== false) {
                         // Create a standardized row with the clean description
                         $standardizedRow = $dataRows[$i];
@@ -1027,10 +1044,11 @@ class NormalizationController extends Controller
             }
         }
         
-        // Sort sub-rows in the correct order (Connected, Nil, IST)
-        usort($subRows, function($a, $b) {
-            $indexA = array_search(trim($a[0]), self::REQUIRED_SUBS);
-            $indexB = array_search(trim($b[0]), self::REQUIRED_SUBS);
+        // Sort sub-rows in the correct order
+        $requiredSubs = $this->getDescriptionTypes($includeCst);
+        usort($subRows, function($a, $b) use ($requiredSubs) {
+            $indexA = array_search(trim($a[0]), $requiredSubs);
+            $indexB = array_search(trim($b[0]), $requiredSubs);
             
             // With our standardization above, this should always find the index
             if ($indexA === false || $indexB === false) {
@@ -1091,25 +1109,26 @@ class NormalizationController extends Controller
      * Helper function to get the index of a sub-row type
      * 
      * @param string $rowDesc The description of the row
-     * @return int The index in REQUIRED_SUBS or a high number if not found
+     * @param array $requiredSubs Array of required sub types
+     * @return int The index in requiredSubs or a high number if not found
      */
-    private function getSubRowIndex($rowDesc)
+    private function getSubRowIndex($rowDesc, $requiredSubs)
     {
         // Direct match
-        $index = array_search($rowDesc, self::REQUIRED_SUBS);
+        $index = array_search($rowDesc, $requiredSubs);
         if ($index !== false) {
             return $index;
         }
         
         // Starts with match
-        foreach (self::REQUIRED_SUBS as $idx => $type) {
+        foreach ($requiredSubs as $idx => $type) {
             if (stripos($rowDesc, $type) === 0) {
                 return $idx;
             }
         }
         
         // Contains match
-        foreach (self::REQUIRED_SUBS as $idx => $type) {
+        foreach ($requiredSubs as $idx => $type) {
             if (stripos($rowDesc, $type) !== false) {
                 return $idx;
             }

@@ -8,6 +8,7 @@ use App\Models\ExcelJson;
 use App\Services\ExcelParserService;
 use App\Services\ComparisonService;
 use App\Services\ExcelExportService;
+use App\Helpers\DescriptionTypesHelper;
 
 class ExcelController extends Controller
 {
@@ -63,6 +64,10 @@ class ExcelController extends Controller
 
         try {
             $comparisonName = $request->input('comparison_name');
+            $includeCst = $request->has('include_cst') && $request->input('include_cst') == '1';
+            
+            Log::info('Processing files with include_cst: ' . ($includeCst ? 'true' : 'false'));
+            
             $files = [];
             $fileIds = [];
             
@@ -74,7 +79,7 @@ class ExcelController extends Controller
             Log::debug('Starting to process 1st Excel file: ' . $filename1);
             
             $parserService = new ExcelParserService();
-            $structuredData1 = $parserService->parse($filePath1);
+            $structuredData1 = $parserService->parse($filePath1, $includeCst);
             
             $costCentersCount1 = count($structuredData1['cost_centers'] ?? []);
             Log::debug('Total cost centers found in file 1: ' . $costCentersCount1);
@@ -84,7 +89,8 @@ class ExcelController extends Controller
                 'file_name' => $filename1,
                 'data' => $structuredData1,
                 'file_type' => 'file_1',
-                'comparison_name' => $comparisonName
+                'comparison_name' => $comparisonName,
+                'include_cst' => $includeCst
             ]);
             
             $fileIds[] = $excelModel1->id;
@@ -100,7 +106,7 @@ class ExcelController extends Controller
             
             Log::debug('Starting to process 2nd Excel file: ' . $filename2);
             
-            $structuredData2 = $parserService->parse($filePath2);
+            $structuredData2 = $parserService->parse($filePath2, $includeCst);
             
             $costCentersCount2 = count($structuredData2['cost_centers'] ?? []);
             Log::debug('Total cost centers found in file 2: ' . $costCentersCount2);
@@ -110,7 +116,8 @@ class ExcelController extends Controller
                 'file_name' => $filename2,
                 'data' => $structuredData2,
                 'file_type' => 'file_2',
-                'comparison_name' => $comparisonName
+                'comparison_name' => $comparisonName,
+                'include_cst' => $includeCst
             ]);
             
             $fileIds[] = $excelModel2->id;
