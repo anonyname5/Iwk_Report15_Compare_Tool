@@ -232,6 +232,79 @@
             margin-right: 10px;
             color: var(--primary-color);
         }
+        
+        .cst-option-card {
+            background: linear-gradient(135deg, rgba(52, 152, 219, 0.08) 0%, rgba(52, 152, 219, 0.03) 100%);
+            border: 1px solid rgba(52, 152, 219, 0.15);
+            border-radius: 8px;
+            padding: 1.25rem 1.5rem;
+            transition: all 0.3s ease;
+        }
+        
+        .cst-option-card:hover {
+            border-color: rgba(52, 152, 219, 0.3);
+            background: linear-gradient(135deg, rgba(52, 152, 219, 0.12) 0%, rgba(52, 152, 219, 0.05) 100%);
+        }
+        
+        .cst-toggle-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .cst-toggle-label {
+            flex: 1;
+            font-weight: 600;
+            color: var(--dark-color);
+            font-size: 1rem;
+            margin: 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .cst-toggle-label i {
+            color: var(--primary-color);
+            font-size: 1.1rem;
+        }
+        
+        .form-check-input[type="checkbox"] {
+            width: 3.5rem;
+            height: 2rem;
+            cursor: pointer;
+            border-radius: 2rem;
+            background-color: #dee2e6;
+            border: 2px solid #adb5bd;
+            transition: all 0.3s ease;
+        }
+        
+        .form-check-input[type="checkbox"]:checked {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        
+        .form-check-input[type="checkbox"]:focus {
+            box-shadow: 0 0 0 0.25rem rgba(52, 152, 219, 0.25);
+        }
+        
+        .cst-info-text {
+            font-size: 0.875rem;
+            color: #6c757d;
+            line-height: 1.5;
+            margin: 0;
+            padding-left: 0.5rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+        
+        .cst-info-text i {
+            color: var(--primary-color);
+            margin-top: 0.2rem;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -280,6 +353,23 @@
                                 <input type="text" class="form-control" id="comparison_name" name="comparison_name" 
                                     placeholder="Enter a name for this comparison" required>
                                 <div class="form-text"></div>
+                            </div>
+                            
+                            <div class="mb-4">
+                                <div class="cst-option-card">
+                                    <div class="cst-toggle-wrapper">
+                                        <input class="form-check-input" type="checkbox" 
+                                               id="include_cst" name="include_cst" value="1">
+                                        <label class="cst-toggle-label" for="include_cst">
+                                            <i class="fas fa-list-check"></i>
+                                            <span>Include CST (4 Service Levels)</span>
+                                        </label>
+                                    </div>
+                                    <p class="cst-info-text">
+                                        <i class="fas fa-info-circle"></i>
+                                        <span>Check this to include CST as the 4th Service Level. Leave unchecked for standard 3 Service Levels (Connected, Nil, IST).</span>
+                                    </p>
+                                </div>
                             </div>
                             
                             <div class="row comparison-section">

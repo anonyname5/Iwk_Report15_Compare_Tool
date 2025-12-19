@@ -4,18 +4,30 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use App\Helpers\DescriptionTypesHelper;
 
 class ExcelParserService
 {
-    public function parse($path)
+    public function parse($path, $includeCst = false)
     {
-        Log::info('Starting Excel file parsing process', ['file_path' => $path]);
+        Log::info('Starting Excel file parsing process', [
+            'file_path' => $path,
+            'include_cst' => $includeCst
+        ]);
         
         $spreadsheet = IOFactory::load($path);
         $sheet = $spreadsheet->getActiveSheet();
         $rows = $sheet->toArray(null, true, true, true);
         
-        Log::info('Excel file loaded successfully', ['total_rows' => count($rows)]);
+        // Get description types based on CST inclusion
+        $expectedDescriptionTypes = DescriptionTypesHelper::getTypes($includeCst);
+        $descriptionTypesCount = count($expectedDescriptionTypes);
+        
+        Log::info('Excel file loaded successfully', [
+            'total_rows' => count($rows),
+            'description_types' => $expectedDescriptionTypes,
+            'description_types_count' => $descriptionTypesCount
+        ]);
 
         $reportTitle = $rows[1]['A'] ?? 'Untitled Report';
         $generatedAt = now()->toIso8601String();
@@ -115,8 +127,8 @@ class ExcelParserService
                             // Use the standard version for storage
                             $standardMainDesc = $mainDescNames[array_search($mainDescVariations[0], $mainDescNames)];
                             
-                            // Try to find subrows (Connected, Nil, IST)
-                            $subTypes = ['Connected', 'Nil', 'IST'];
+                            // Try to find subrows using dynamic description types
+                            $subTypes = $expectedDescriptionTypes;
                             $subRows = [];
                             
                             // Look back up to 10 rows to find sub-rows
@@ -132,6 +144,11 @@ class ExcelParserService
                                 
                                 $subDesc = trim($subRow['A']);
                                 foreach ($subTypes as $subType) {
+                                    // Ensure $subType is a string
+                                    if (!is_string($subType)) {
+                                        Log::warning('Invalid subType in array', ['subType' => $subType, 'type' => gettype($subType)]);
+                                        continue;
+                                    }
                                     if ($subDesc === $subType || stripos($subDesc, $subType) === 0) {
                                         Log::info('Found overall sub-row', [
                                             'main_description' => $standardMainDesc,
@@ -190,29 +207,79 @@ class ExcelParserService
                     Log::info('Starting new cost center', ['cost_center_code' => $code]);
                 }
 
-                // Find previous 3 rows: IST, Nil, Connected
-                $ist = $rows[$i - 1] ?? null;
-                $nil = $rows[$i - 2] ?? null;
-                $connected = $rows[$i - 3] ?? null;
-
+                // Find previous rows based on description types count
+                // Order: Connected, Nil, IST, [CST (optional)]
+                // We look backwards from the main total row
+                $descriptionTypesData = [];
+                $expectedTypes = $expectedDescriptionTypes; // ['Connected', 'Nil', 'IST'] or ['Connected', 'Nil', 'IST', 'CST']
+                
+                // Look back up to descriptionTypesCount rows to find sub-rows
+                for ($j = 1; $j <= $descriptionTypesCount && ($i - $j) >= 7; $j++) {
+                    $subRow = $rows[$i - $j] ?? null;
+                    if (!$subRow || empty($subRow['A']) || !empty($subRow['B'])) {
+                        continue;
+                    }
+                    
+                    $subDesc = trim($subRow['A']);
+                    
+                    // Try to match against expected types in order
+                    foreach ($expectedTypes as $expectedType) {
+                        // Check if this row matches the expected type
+                        if ($subDesc === $expectedType || stripos($subDesc, $expectedType) === 0) {
+                            // Check if we already have this type (avoid duplicates)
+                            $alreadyFound = false;
+                            foreach ($descriptionTypesData as $existing) {
+                                if ($existing['type'] === $expectedType) {
+                                    $alreadyFound = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!$alreadyFound) {
+                                $descriptionTypesData[] = [
+                                    'type' => $expectedType,
+                                    'data' => $this->parseFinancialData($subRow)
+                                ];
+                                Log::debug('Found description type row', [
+                                    'type' => $expectedType,
+                                    'row_number' => $i - $j,
+                                    'description' => $subDesc
+                                ]);
+                                break; // Found this type, move to next row
+                            }
+                        }
+                    }
+                }
+                
+                // Ensure all expected types are present (create empty ones if missing)
+                foreach ($expectedTypes as $expectedType) {
+                    $found = false;
+                    foreach ($descriptionTypesData as $existing) {
+                        if ($existing['type'] === $expectedType) {
+                            $found = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$found) {
+                        // Create empty data for missing type
+                        $descriptionTypesData[] = [
+                            'type' => $expectedType,
+                            'data' => $this->parseFinancialData([]) // Empty row
+                        ];
+                        Log::debug('Created missing description type', ['type' => $expectedType]);
+                    }
+                }
+                
+                // Sort to match expected order
                 $descriptionTypes = [];
-                if ($connected) {
-                    $descriptionTypes[] = [
-                        'type' => 'Connected',
-                        'data' => $this->parseFinancialData($connected)
-                    ];
-                }
-                if ($nil) {
-                    $descriptionTypes[] = [
-                        'type' => 'Nil',
-                        'data' => $this->parseFinancialData($nil)
-                    ];
-                }
-                if ($ist) {
-                    $descriptionTypes[] = [
-                        'type' => 'IST',
-                        'data' => $this->parseFinancialData($ist)
-                    ];
+                foreach ($expectedTypes as $expectedType) {
+                    foreach ($descriptionTypesData as $descType) {
+                        if ($descType['type'] === $expectedType) {
+                            $descriptionTypes[] = $descType;
+                            break;
+                        }
+                    }
                 }
 
                 $mainDescBuffer[] = [

@@ -42,11 +42,11 @@ This guide will help you get the IWK Report 15 Comparison Tool up and running qu
    # Copy environment file
    docker exec iwk_finance_app cp docker.env .env
    
+   # Install dependencies (MUST be done before artisan commands)
+   docker exec iwk_finance_app composer install
+   
    # Generate application key
    docker exec iwk_finance_app php artisan key:generate
-   
-   # Install dependencies
-   docker exec iwk_finance_app composer install
    
    # Run database migrations
    docker exec iwk_finance_app php artisan migrate
@@ -58,6 +58,129 @@ This guide will help you get the IWK Report 15 Comparison Tool up and running qu
 
 5. **Access the application**:
    Open your browser and go to: **http://localhost:8000**
+
+6. **Access the Oracle Database**:
+   
+   **Database Connection Details:**
+   - Host: `localhost` (from your computer) or `oracle` (from within Docker)
+   - Port: `1521`
+   - Service Name: `XEPDB1`
+   - Username: `iwk_finance`
+   - Password: `iwk_password`
+   
+   **Method 1: Using SQL*Plus (Command Line)**
+   
+   Connect directly from the Oracle container:
+   ```powershell
+   docker exec -it iwk_oracle sqlplus iwk_finance/iwk_password@XEPDB1
+   ```
+   
+   Or connect as sysdba for administrative tasks:
+   ```powershell
+   docker exec -it iwk_oracle sqlplus / as sysdba
+   ```
+   
+   **Method 2: Using Oracle SQL Developer (GUI Tool)**
+   
+   1. Download Oracle SQL Developer from: https://www.oracle.com/database/sqldeveloper/
+   2. Create a new connection with these settings:
+      - **Connection Name**: IWK Finance
+      - **Username**: `iwk_finance`
+      - **Password**: `iwk_password`
+      - **Hostname**: `localhost`
+      - **Port**: `1521`
+      - **Service Name**: `XEPDB1`
+   3. Click "Test" to verify connection, then "Save" and "Connect"
+   
+   **Method 3: Using Oracle Enterprise Manager Express (Web UI)**
+   
+   Access the web-based database management interface:
+   - URL: **http://localhost:5500/em**
+   - Username: `sys` (or `iwk_finance`)
+   - Password: `oracle_root_password` (for sys) or `iwk_password` (for iwk_finance)
+   - Connect as: `SYSDBA` (for sys) or `Normal` (for iwk_finance)
+   
+   **Method 4: Using Laravel Tinker (Laravel's REPL)**
+   
+   Access the database through Laravel:
+   ```powershell
+   docker exec -it iwk_finance_app php artisan tinker
+   ```
+   
+   Then run database queries:
+   ```php
+   // Get all tables
+   DB::select("SELECT table_name FROM user_tables");
+   
+   // Query a table
+   DB::table('your_table_name')->get();
+   
+   // Run raw SQL
+   DB::select("SELECT * FROM your_table_name");
+   ```
+   
+   **Method 5: Using DBeaver (Recommended GUI Tool)**
+   
+   DBeaver is a free, cross-platform database tool. Here's how to set it up:
+   
+   **Step 1: Download and Install DBeaver**
+   - Download from: https://dbeaver.io/download/
+   - Install the Community Edition (free)
+   
+   **Step 2: Install Oracle Driver**
+   1. Open DBeaver
+   2. Go to **Database** → **Driver Manager**
+   3. Find **Oracle** in the list
+   4. If not present, click **New Driver** → Search for "Oracle"
+   5. DBeaver will automatically download the Oracle JDBC driver
+   
+   **Step 3: Create New Database Connection**
+   1. Click **New Database Connection** (plug icon) or **Database** → **New Database Connection**
+   2. Select **Oracle** from the list
+   3. Click **Next**
+   
+   **Step 4: Configure Connection Settings**
+   
+   In the **Main** tab, enter:
+   - **Host**: `localhost`
+   - **Port**: `1521`
+   - **Database/Service**: `XEPDB1` (this is the Service Name)
+   - **Username**: `iwk_finance`
+   - **Password**: `iwk_password`
+   
+   **Important**: Make sure to select **Service name** (not SID) in the connection type dropdown if available.
+   
+   **Step 5: Test Connection**
+   1. Click **Test Connection**
+   2. If prompted to download Oracle drivers, click **Download**
+   3. Wait for "Connected" message
+   4. Click **Finish** to save the connection
+   
+   **Step 6: Browse Your Database**
+   - Expand the connection in the Database Navigator
+   - Navigate to: **Schemas** → **IWK_FINANCE** → **Tables**
+   - You'll see all your application tables
+   
+   **Troubleshooting DBeaver:**
+   
+   If connection fails:
+   - Verify Oracle container is running: `docker ps | findstr oracle`
+   - Check if port 1521 is accessible: `telnet localhost 1521`
+   - Try using **TNS** connection type instead of **Basic**
+   - Ensure you're using **Service Name** = `XEPDB1`, not SID
+   
+   **Alternative: Using TNS Connection in DBeaver**
+   
+   If basic connection doesn't work, you can use TNS:
+   1. In connection settings, switch to **TNS** tab
+   2. TNS Alias: `XEPDB1`
+   3. TNS Configuration file: Point to your `tnsnames/tnsnames.ora` file
+   
+   **Other Database Tools:**
+   
+   - **DataGrip** (JetBrains, paid): Similar setup, use same connection details
+   - **Toad for Oracle** (Quest Software): Professional Oracle tool
+   - **Oracle SQL Developer** (Free, Oracle official): See Method 2 above
 
 ---
 
@@ -194,6 +317,29 @@ php artisan migrate
 # Linux/Mac: tail -f storage/logs/laravel.log
 ```
 
+### Database Commands
+
+```powershell
+# Connect to Oracle database via SQL*Plus
+docker exec -it iwk_oracle sqlplus iwk_finance/iwk_password@XEPDB1
+
+# Connect as sysdba (for admin tasks)
+docker exec -it iwk_oracle sqlplus / as sysdba
+
+# Run SQL query directly
+docker exec -i iwk_oracle sqlplus iwk_finance/iwk_password@XEPDB1 <<EOF
+SELECT * FROM user_tables;
+EXIT;
+EOF
+
+# Access Laravel Tinker for database queries
+docker exec -it iwk_finance_app php artisan tinker
+
+# Check database connection from Laravel
+docker exec iwk_finance_app php artisan tinker
+# Then: DB::connection()->getPdo();
+```
+
 ---
 
 ## 🐛 Troubleshooting
@@ -231,6 +377,27 @@ php artisan serve --port=8001
    # Then in tinker: DB::connection()->getPdo();
    ```
 
+4. **Password Expiration Error (ORA-28002)**:
+   
+   If you see: `ORA-28002: the password will expire within 7 days`
+   
+   This warning is being treated as an error. Fix it immediately with this one-liner:
+   
+   ```powershell
+   # Quick fix: Reset password and disable expiration
+   docker exec -i iwk_oracle bash -c "echo 'ALTER SESSION SET CONTAINER = XEPDB1;
+   ALTER USER iwk_finance IDENTIFIED BY iwk_password;
+   ALTER PROFILE DEFAULT LIMIT PASSWORD_LIFE_TIME UNLIMITED;
+   EXIT;' | sqlplus / as sysdba"
+   ```
+   
+   Then retry the migration:
+   ```powershell
+   docker exec iwk_finance_app php artisan migrate
+   ```
+   
+   **Note**: For new installations, this is now fixed automatically in the setup scripts. If you're setting up a fresh database, the password expiration is disabled by default.
+
 ### Permission Errors
 
 **Windows**: Usually not an issue, but if you see permission errors:
@@ -259,6 +426,21 @@ npm cache clean --force
 # Try again
 composer install
 npm install
+```
+
+### "Failed to open stream: No such file or directory" Error
+
+If you see an error like:
+```
+Warning: require(/var/www/html/vendor/autoload.php): Failed to open stream
+```
+
+This means you're trying to run `php artisan` commands before installing Composer dependencies. **Always run `composer install` first**, then run artisan commands:
+
+```powershell
+# Correct order:
+docker exec iwk_finance_app composer install
+docker exec iwk_finance_app php artisan key:generate
 ```
 
 ---

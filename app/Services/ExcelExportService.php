@@ -11,6 +11,7 @@ use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use App\Helpers\DescriptionTypesHelper;
 
 class ExcelExportService
 {
@@ -24,6 +25,14 @@ class ExcelExportService
      */
     public function exportComparison(array $comparisonData, ExcelJson $file1, ExcelJson $file2)
     {
+        // Determine if CST is included (check from either file, they should match)
+        $includeCst = $file1->include_cst ?? false;
+        if ($file2->include_cst ?? false) {
+            $includeCst = true; // If either file has CST, use it
+        }
+        
+        Log::info('Exporting comparison with include_cst: ' . ($includeCst ? 'true' : 'false'));
+        
         // Create new Spreadsheet
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -36,7 +45,7 @@ class ExcelExportService
         $this->addSummarySection($sheet, $comparisonData);
         
         // Add detailed comparison data - start 2 rows lower to account for the extra summary rows
-        $rowIndex = $this->addDetailedComparison($sheet, $comparisonData, 22);
+        $rowIndex = $this->addDetailedComparison($sheet, $comparisonData, 22, $includeCst);
         
         // Apply global formatting
         $this->applyGlobalFormatting($sheet, $rowIndex);
@@ -182,7 +191,7 @@ class ExcelExportService
     /**
      * Add detailed comparison data to the spreadsheet
      */
-    private function addDetailedComparison($sheet, $comparisonData, $startRow)
+    private function addDetailedComparison($sheet, $comparisonData, $startRow, $includeCst = false)
     {
         $row = $startRow;
         
@@ -588,7 +597,13 @@ class ExcelExportService
      */
     public function exportOriginalFormat(array $comparisonData, ExcelJson $file1, ExcelJson $file2)
     {
-        Log::info('Starting export in original format for comparison: ' . $comparisonData['comparison_name']);
+        // Determine if CST is included (check from either file, they should match)
+        $includeCst = $file1->include_cst ?? false;
+        if ($file2->include_cst ?? false) {
+            $includeCst = true; // If either file has CST, use it
+        }
+        
+        Log::info('Starting export in original format for comparison: ' . $comparisonData['comparison_name'] . ' with include_cst: ' . ($includeCst ? 'true' : 'false'));
         
         // Track cells that have already been processed to avoid duplicates
         $processedCells = [];
@@ -764,11 +779,25 @@ class ExcelExportService
             foreach ($cc2['main_descriptions'] ?? [] as $mainDesc) {
                 Log::info('  Processing main description: ' . $mainDesc['name']);
                 
-                // First write description types (Connected, Nil, IST)
+                // First write description types (Connected, Nil, IST, CST if included)
                 if (isset($mainDesc['description_types'])) {
                     Log::info('    Writing ' . count($mainDesc['description_types']) . ' description types (sub-rows)');
                     
-                    foreach ($mainDesc['description_types'] as $descType) {
+                    // Get the expected order of description types
+                    $expectedOrder = DescriptionTypesHelper::getOrder($includeCst);
+                    
+                    // Sort description types to match expected order
+                    $sortedDescTypes = [];
+                    foreach ($expectedOrder as $expectedType) {
+                        foreach ($mainDesc['description_types'] as $descType) {
+                            if ($descType['type'] === $expectedType) {
+                                $sortedDescTypes[] = $descType;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    foreach ($sortedDescTypes as $descType) {
                         Log::info('      Writing sub-row: ' . $descType['type'] . ' at row ' . $row);
                         
                         $sheet->setCellValue('A' . $row, $descType['type']);
@@ -1158,7 +1187,8 @@ class ExcelExportService
                         }
                         
                         // If this is a sub-row for our cost center, add it to our list
-                        if (in_array($value, ['Connected', 'Nil', 'IST']) && $ccValue === $costCenter['code']) {
+                        $validTypes = DescriptionTypesHelper::getTypes($includeCst);
+                        if (in_array($value, $validTypes) && $ccValue === $costCenter['code']) {
                             $relatedSubRows[$value] = $r;
                         }
                         
@@ -1167,7 +1197,7 @@ class ExcelExportService
                     
                     Log::info('    Found ' . count($relatedSubRows) . ' related sub-rows for ' . $mainDesc['name']);
                     
-                    // Process differences in description types (Connected, Nil, IST)
+                    // Process differences in description types (Connected, Nil, IST, CST if included)
                     foreach ($mainDesc['description_types_differences'] as $descType => $differences) {
                         Log::info('      Processing differences for sub-row: ' . $descType . ' (' . count($differences) . ' differences)');
                         
@@ -1291,8 +1321,8 @@ class ExcelExportService
             
             Log::info('  Processing overall total: ' . $mainDescName);
             
-            // Write description types (Connected, Nil, IST) in that order
-            $desiredOrder = ['Connected', 'Nil', 'IST'];
+            // Write description types in the correct order (Connected, Nil, IST, CST if included)
+            $desiredOrder = DescriptionTypesHelper::getOrder($includeCst);
             if (isset($mainDesc['description_types'])) {
                 $descTypes = collect($mainDesc['description_types']);
                 
