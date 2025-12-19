@@ -228,4 +228,80 @@ class ExcelController extends Controller
                 ->with('error', 'Error exporting to Excel: ' . $e->getMessage());
         }
     }
+    
+    /**
+     * Delete a comparison (both files)
+     * 
+     * @param string $comparisonName The name of the comparison
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
+     */
+    public function delete($comparisonName)
+    {
+        try {
+            // Find both files in the comparison
+            $file1 = ExcelJson::where('comparison_name', $comparisonName)
+                ->where('file_type', 'file_1')
+                ->first();
+                
+            $file2 = ExcelJson::where('comparison_name', $comparisonName)
+                ->where('file_type', 'file_2')
+                ->first();
+            
+            if (!$file1 && !$file2) {
+                if (request()->ajax() || request()->wantsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Comparison not found'
+                    ], 404);
+                }
+                return redirect()->route('excel.index')
+                    ->with('error', 'Comparison not found.');
+            }
+            
+            $deletedCount = 0;
+            
+            // Delete file 1 if exists
+            if ($file1) {
+                $file1->delete();
+                $deletedCount++;
+                Log::info('Deleted file 1: ' . $file1->file_name);
+            }
+            
+            // Delete file 2 if exists
+            if ($file2) {
+                $file2->delete();
+                $deletedCount++;
+                Log::info('Deleted file 2: ' . $file2->file_name);
+            }
+            
+            Log::info('Deleted comparison: ' . $comparisonName . ' (' . $deletedCount . ' files)');
+            
+            // Return JSON response for AJAX requests
+            if (request()->ajax() || request()->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Comparison deleted successfully',
+                    'deleted_count' => $deletedCount
+                ]);
+            }
+            
+            // For regular requests, redirect with success message
+            return redirect()->route('excel.index')
+                ->with('success', 'Comparison "' . $comparisonName . '" deleted successfully.');
+                
+        } catch (\Exception $e) {
+            Log::error('Delete comparison error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            
+            if (request()->ajax() || request()->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error deleting comparison: ' . $e->getMessage()
+                ], 500);
+            }
+            
+            return redirect()->route('excel.index')
+                ->with('error', 'Error deleting comparison: ' . $e->getMessage());
+        }
+    }
 }

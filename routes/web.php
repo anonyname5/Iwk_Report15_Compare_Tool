@@ -13,6 +13,7 @@ Route::get('/results', [ExcelController::class, 'index'])->name('excel.index');
 Route::get('/view/{id}', [ExcelController::class, 'show'])->name('excel.show');
 Route::get('/compare/{comparisonName}', [ExcelController::class, 'compare'])->name('excel.compare');
 Route::get('/export/{comparisonName}', [ExcelController::class, 'exportExcel'])->name('excel.export');
+Route::delete('/delete/{comparisonName}', [ExcelController::class, 'delete'])->name('excel.delete');
 
 // Normalization routes
 Route::get('/normalize', [NormalizationController::class, 'showUploadForm']);
