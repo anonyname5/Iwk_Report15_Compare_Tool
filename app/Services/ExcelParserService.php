@@ -20,12 +20,12 @@ class ExcelParserService
         $rows = $sheet->toArray(null, true, true, true);
         
         // Get description types based on CST inclusion
-        $descriptionTypes = DescriptionTypesHelper::getTypes($includeCst);
-        $descriptionTypesCount = count($descriptionTypes);
+        $expectedDescriptionTypes = DescriptionTypesHelper::getTypes($includeCst);
+        $descriptionTypesCount = count($expectedDescriptionTypes);
         
         Log::info('Excel file loaded successfully', [
             'total_rows' => count($rows),
-            'description_types' => $descriptionTypes,
+            'description_types' => $expectedDescriptionTypes,
             'description_types_count' => $descriptionTypesCount
         ]);
 
@@ -128,7 +128,7 @@ class ExcelParserService
                             $standardMainDesc = $mainDescNames[array_search($mainDescVariations[0], $mainDescNames)];
                             
                             // Try to find subrows using dynamic description types
-                            $subTypes = $descriptionTypes;
+                            $subTypes = $expectedDescriptionTypes;
                             $subRows = [];
                             
                             // Look back up to 10 rows to find sub-rows
@@ -144,6 +144,11 @@ class ExcelParserService
                                 
                                 $subDesc = trim($subRow['A']);
                                 foreach ($subTypes as $subType) {
+                                    // Ensure $subType is a string
+                                    if (!is_string($subType)) {
+                                        Log::warning('Invalid subType in array', ['subType' => $subType, 'type' => gettype($subType)]);
+                                        continue;
+                                    }
                                     if ($subDesc === $subType || stripos($subDesc, $subType) === 0) {
                                         Log::info('Found overall sub-row', [
                                             'main_description' => $standardMainDesc,
@@ -206,7 +211,7 @@ class ExcelParserService
                 // Order: Connected, Nil, IST, [CST (optional)]
                 // We look backwards from the main total row
                 $descriptionTypesData = [];
-                $expectedTypes = $descriptionTypes; // ['Connected', 'Nil', 'IST'] or ['Connected', 'Nil', 'IST', 'CST']
+                $expectedTypes = $expectedDescriptionTypes; // ['Connected', 'Nil', 'IST'] or ['Connected', 'Nil', 'IST', 'CST']
                 
                 // Look back up to descriptionTypesCount rows to find sub-rows
                 for ($j = 1; $j <= $descriptionTypesCount && ($i - $j) >= 7; $j++) {
