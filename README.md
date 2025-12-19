@@ -40,7 +40,7 @@ A Laravel-based web application for comparing and analyzing financial Excel repo
   - Govt. Quarters Totals
   - Industrial Totals
   - Ind. No HC Totals
-- **Configurable Description Types**: Choose between 3 or 4 description types:
+- **Configurable Service Level**: Choose between 3 or 4 Service Level:
   - **Standard (3 types)**: Connected, Nil, IST
   - **Extended (4 types)**: Connected, Nil, IST, CST (optional)
   - Selectable per upload/comparison via checkbox
@@ -219,9 +219,9 @@ The Docker setup includes:
 
 1. Navigate to the home page (`/`)
 2. Enter a **Comparison Name** to identify this comparison
-3. **Optional**: Check **"Include CST (4 Description Types)"** if your files contain CST data
-   - Unchecked: Uses 3 description types (Connected, Nil, IST) - default
-   - Checked: Uses 4 description types (Connected, Nil, IST, CST)
+3. **Optional**: Check **"Include CST (4 Service Level)"** if your files contain CST data
+   - Unchecked: Uses 3 Service Level (Connected, Nil, IST) - default
+   - Checked: Uses 4 Service Level (Connected, Nil, IST, CST)
 4. Upload **BRAIN File** (File 1)
 5. Upload **BS File** (File 2)
 6. Click **Upload & Process**
@@ -229,7 +229,7 @@ The Docker setup includes:
 The system will:
 - Parse both Excel files
 - Extract cost centers, main descriptions, and financial data
-- Handle 3 or 4 description types based on your selection
+- Handle 3 or 4 Service Level based on your selection
 - Store the parsed data in the database
 - Redirect to the results page
 
@@ -249,13 +249,13 @@ The system will:
 ### Normalizing BRAIN Files
 
 1. Navigate to **Normalize BRAIN Files** (`/normalize`)
-2. **Optional**: Check **"Include CST (4 Description Types)"** if you want CST included in the normalized output
-   - Unchecked: Normalizes with 3 description types (Connected, Nil, IST) - default
-   - Checked: Normalizes with 4 description types (Connected, Nil, IST, CST)
+2. **Optional**: Check **"Include CST (4 Service Level)"** if you want CST included in the normalized output
+   - Unchecked: Normalizes with 3 Service Level (Connected, Nil, IST) - default
+   - Checked: Normalizes with 4 Service Level (Connected, Nil, IST, CST)
 3. Upload a BRAIN Excel file
 4. The system will:
    - Standardize the file structure
-   - Ensure all required description types exist (creates missing ones with zero values)
+   - Ensure all required Service Level exist (creates missing ones with zero values)
    - Apply consistent formatting
    - Download the normalized file automatically
 
@@ -286,7 +286,7 @@ Iwk_Report15_Compare_Tool/
 │   │   ├── ComparisonService.php       # Comparison logic
 │   │   └── ExcelExportService.php       # Excel export generation
 │   ├── Helpers/
-│   │   └── DescriptionTypesHelper.php   # Description types management
+│   │   └── DescriptionTypesHelper.php   # Service Levels management
 │   └── imports/
 │       └── FinanceReportImport.php      # Excel import class
 ├── config/
@@ -342,7 +342,7 @@ Iwk_Report15_Compare_Tool/
 **Indexes:**
 - `['comparison_name', 'file_type']` - For fast comparison lookups
 
-**Description Types:**
+**Service Level:**
 - When `include_cst = false`: Uses 3 Service Level (Connected, Nil, IST)
 - When `include_cst = true`: Uses 4 Service Level (Connected, Nil, IST, CST)
 
@@ -473,11 +473,11 @@ The application now supports configurable Service Level:
 **Features:**
 - Select CST inclusion per upload/comparison via checkbox
 - Backward compatible with existing 3-type files
-- Automatic handling of missing description types
+- Automatic handling of missing Service Level
 - Dynamic parsing, comparison, and export based on selection
 
 **Usage:**
-- Check "Include CST (4 Description Types)" when uploading files that contain CST data
+- Check "Include CST (4 Service Level)" when uploading files that contain CST data
 - The system automatically handles 3 or 4 types throughout the workflow
 - Comparisons work correctly even when one file has CST and the other doesn't
 
