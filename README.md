@@ -22,7 +22,7 @@ A Laravel-based web application for comparing and analyzing financial Excel repo
 ### Core Functionality
 
 - **Excel File Comparison**: Compare two Excel files (BRAIN vs BS) side-by-side
-- **Intelligent Parsing**: Automatically extracts cost centers, main descriptions, and financial data
+- **Intelligent Parsing**: Automatically extracts cost centers, Class, and financial data
 - **Data Normalization**: Standardizes inconsistent Excel formats to a uniform structure
 - **Detailed Analysis**: Identifies missing cost centers, value differences, and structural changes
 - **Excel Export**: Generates comprehensive comparison reports in Excel format
@@ -31,7 +31,7 @@ A Laravel-based web application for comparing and analyzing financial Excel repo
 ### Key Capabilities
 
 - **Cost Center Analysis**: Groups and compares data by cost center codes
-- **Main Description Comparison**: Compares 8 types of main descriptions:
+- **Class Comparison**: Compares 8 types of Class:
   - Commercial Totals
   - Domestic Totals
   - Non-billable Totals
@@ -228,7 +228,7 @@ The Docker setup includes:
 
 The system will:
 - Parse both Excel files
-- Extract cost centers, main descriptions, and financial data
+- Extract cost centers, Class, and financial data
 - Handle 3 or 4 Service Level based on your selection
 - Store the parsed data in the database
 - Redirect to the results page
@@ -265,7 +265,7 @@ The generated comparison Excel includes:
 - **Summary Section**: Overview of differences
 - **Detailed Comparison**: Side-by-side comparison with:
   - Cost center codes
-  - Main descriptions
+  - Class
   - Financial values from both files
   - Difference calculations
   - Percentage changes
@@ -424,7 +424,7 @@ sudo chmod -R 775 storage bootstrap/cache
    ```bash
    tail -f storage/logs/laravel.log
    ```
-4. Ensure file structure matches expected format (cost centers, main descriptions, etc.)
+4. Ensure file structure matches expected format (cost centers, Class, etc.)
 
 #### Memory Issues
 
