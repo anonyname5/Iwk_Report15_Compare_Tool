@@ -15,4 +15,9 @@ GRANT CREATE TRIGGER TO iwk_finance;
 GRANT CREATE TYPE TO iwk_finance;
 GRANT CREATE SYNONYM TO iwk_finance;
 
+-- Disable password expiration for the user
+ALTER USER iwk_finance PASSWORD EXPIRE;
+ALTER USER iwk_finance IDENTIFIED BY iwk_password;
+ALTER PROFILE DEFAULT LIMIT PASSWORD_LIFE_TIME UNLIMITED;
+
 -- Exit 
