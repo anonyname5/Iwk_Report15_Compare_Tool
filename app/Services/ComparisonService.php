@@ -210,7 +210,7 @@ class ComparisonService
                         $mainDescComparison['file1_data'] = $total1;
                         $mainDescComparison['file2_data'] = $total2;
                         
-                        // Compare description types (Connected, Nil, IST)
+                        // Compare description types (Connected, Nil, IST, CST if included)
                         if (isset($md1['description_types']) && isset($md2['description_types'])) {
                             $descTypes1 = collect($md1['description_types']);
                             $descTypes2 = collect($md2['description_types']);
@@ -331,7 +331,7 @@ class ComparisonService
                 $mainDescComparison['file1_data'] = $total1;
                 $mainDescComparison['file2_data'] = $total2;
                 
-                // Compare description types (Connected, Nil, IST)
+                // Compare description types (Connected, Nil, IST, CST if included)
                 if (isset($md1['description_types']) && isset($md2['description_types'])) {
                     $descTypes1 = collect($md1['description_types']);
                     $descTypes2 = collect($md2['description_types']);
