@@ -40,6 +40,10 @@ A Laravel-based web application for comparing and analyzing financial Excel repo
   - Govt. Quarters Totals
   - Industrial Totals
   - Ind. No HC Totals
+- **Configurable Description Types**: Choose between 3 or 4 description types:
+  - **Standard (3 types)**: Connected, Nil, IST
+  - **Extended (4 types)**: Connected, Nil, IST, CST (optional)
+  - Selectable per upload/comparison via checkbox
 - **Financial Metrics**: Extracts and compares 35+ financial columns including:
   - Billing Total
   - Receipts Total
@@ -215,15 +219,21 @@ The Docker setup includes:
 
 1. Navigate to the home page (`/`)
 2. Enter a **Comparison Name** to identify this comparison
-3. Upload **BRAIN File** (File 1)
-4. Upload **BS File** (File 2)
-5. Click **Upload & Process**
+3. **Optional**: Check **"Include CST (4 Description Types)"** if your files contain CST data
+   - Unchecked: Uses 3 description types (Connected, Nil, IST) - default
+   - Checked: Uses 4 description types (Connected, Nil, IST, CST)
+4. Upload **BRAIN File** (File 1)
+5. Upload **BS File** (File 2)
+6. Click **Upload & Process**
 
 The system will:
 - Parse both Excel files
 - Extract cost centers, main descriptions, and financial data
+- Handle 3 or 4 description types based on your selection
 - Store the parsed data in the database
 - Redirect to the results page
+
+**Note**: The CST option must be selected for both files in a comparison if you want to compare CST data. The system will handle mixed scenarios (one file with CST, one without) gracefully.
 
 ### Viewing Comparison Results
 
@@ -239,10 +249,13 @@ The system will:
 ### Normalizing BRAIN Files
 
 1. Navigate to **Normalize BRAIN Files** (`/normalize`)
-2. Upload a BRAIN Excel file
-3. The system will:
+2. **Optional**: Check **"Include CST (4 Description Types)"** if you want CST included in the normalized output
+   - Unchecked: Normalizes with 3 description types (Connected, Nil, IST) - default
+   - Checked: Normalizes with 4 description types (Connected, Nil, IST, CST)
+3. Upload a BRAIN Excel file
+4. The system will:
    - Standardize the file structure
-   - Ensure all required fields exist
+   - Ensure all required description types exist (creates missing ones with zero values)
    - Apply consistent formatting
    - Download the normalized file automatically
 
@@ -272,6 +285,8 @@ Iwk_Report15_Compare_Tool/
 │   │   ├── ExcelParserService.php       # Excel parsing logic
 │   │   ├── ComparisonService.php       # Comparison logic
 │   │   └── ExcelExportService.php       # Excel export generation
+│   ├── Helpers/
+│   │   └── DescriptionTypesHelper.php   # Description types management
 │   └── imports/
 │       └── FinanceReportImport.php      # Excel import class
 ├── config/
@@ -307,6 +322,7 @@ Iwk_Report15_Compare_Tool/
 | GET | `/export/{comparisonName}` | Download comparison Excel (detailed format) |
 | GET | `/normalize` | Normalization upload form |
 | POST | `/normalize` | Process file normalization |
+| DELETE | `/delete/{comparisonName}` | Delete a comparison and its associated files |
 
 ## 🗄️ Database Schema
 
@@ -319,11 +335,16 @@ Iwk_Report15_Compare_Tool/
 | `data` | json | Parsed Excel structure |
 | `file_type` | string | 'file_1' or 'file_2' |
 | `comparison_name` | string | Groups files for comparison |
+| `include_cst` | boolean | Whether CST (4th Service Level) is included (default: false) |
 | `created_at` | timestamp | Creation timestamp |
 | `updated_at` | timestamp | Last update timestamp |
 
 **Indexes:**
 - `['comparison_name', 'file_type']` - For fast comparison lookups
+
+**Description Types:**
+- When `include_cst = false`: Uses 3 Service Level (Connected, Nil, IST)
+- When `include_cst = true`: Uses 4 Service Level (Connected, Nil, IST, CST)
 
 ## 🔧 Troubleshooting
 
@@ -440,6 +461,28 @@ docker-compose up -d --build
 docker exec -it iwk_finance_app bash
 ```
 
+## 🆕 Recent Updates
+
+### Configurable Service Level (v1.1.0)
+
+The application now supports configurable Service Level:
+
+- **Standard Mode (3 types)**: Connected, Nil, IST - Default behavior
+- **Extended Mode (4 types)**: Connected, Nil, IST, CST - Optional
+
+**Features:**
+- Select CST inclusion per upload/comparison via checkbox
+- Backward compatible with existing 3-type files
+- Automatic handling of missing description types
+- Dynamic parsing, comparison, and export based on selection
+
+**Usage:**
+- Check "Include CST (4 Description Types)" when uploading files that contain CST data
+- The system automatically handles 3 or 4 types throughout the workflow
+- Comparisons work correctly even when one file has CST and the other doesn't
+
+See `IMPLEMENTATION_PLAN.md` for detailed technical documentation.
+
 ## 📝 Development
 
 ### Running Tests
@@ -480,5 +523,21 @@ For issues, questions, or contributions, please contact the development team.
 
 ---
 
-**Version**: 1.0.0  
-**Last Updated**: 2025
+**Version**: 1.1.0  
+**Last Updated**: December 2025
+
+### Changelog
+
+#### v1.1.0 (December 2025)
+- ✨ Added configurable Service Level (3 or 4 types with CST option)
+- ✨ Added CST checkbox to upload and normalization forms
+- 🔧 Updated all services to support dynamic Service Level
+- 🗄️ Added `include_cst` column to database schema
+- 🐛 Fixed variable name conflict bug in ExcelParserService
+- ✅ All features tested and verified
+
+#### v1.0.0 (May 2025)
+- Initial release
+- Excel file comparison functionality
+- Data normalization
+- Export capabilities
