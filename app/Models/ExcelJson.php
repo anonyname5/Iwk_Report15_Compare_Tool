@@ -13,11 +13,13 @@ class ExcelJson extends Model
         'file_name',
         'data',
         'file_type',
-        'comparison_name'
+        'comparison_name',
+        'include_cst'
     ];
 
     protected $casts = [
         'data' => 'array',
+        'include_cst' => 'boolean',
     ];
     
     /**
