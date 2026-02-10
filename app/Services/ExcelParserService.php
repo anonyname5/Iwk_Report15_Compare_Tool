@@ -8,6 +8,98 @@ use App\Helpers\DescriptionTypesHelper;
 
 class ExcelParserService
 {
+    /**
+     * Standard main description names (canonical forms)
+     */
+    const MAIN_DESCRIPTIONS = [
+        'Commercial Totals',
+        'Domestic Totals',
+        'Non-billable Totals',
+        'Govt.Domestic Totals',
+        'Govt. Premises Totals',
+        'Govt. Quarters Totals',
+        'Industrial Totals',
+        'Ind. No HC Totals',
+    ];
+
+    /**
+     * Normalize a description string for fuzzy matching.
+     * Removes periods, hyphens, extra spaces, converts to lowercase.
+     */
+    private function normalizeForMatching(string $desc): string
+    {
+        $normalized = trim($desc);
+        $normalized = rtrim($normalized, ':');
+        $normalized = str_replace('.', '', $normalized);
+        $normalized = str_replace('-', ' ', $normalized);
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+        return strtolower($normalized);
+    }
+
+    /**
+     * Map a raw main description name to its standard (canonical) form.
+     * Handles variations like:
+     * - "Non-Bill Totals" → "Non-billable Totals"
+     * - "Govt. Domestic Totals" → "Govt.Domestic Totals"
+     * - "Ind.No HC Totals" → "Ind. No HC Totals"
+     * - "Govt.Premises Totals" → "Govt. Premises Totals"
+     * etc.
+     *
+     * @param string $rawName The raw name captured from the file
+     * @return string The standardized canonical name
+     */
+    private function standardizeMainDescriptionName(string $rawName): string
+    {
+        // First try exact match
+        if (in_array($rawName, self::MAIN_DESCRIPTIONS)) {
+            return $rawName;
+        }
+
+        $normalized = $this->normalizeForMatching($rawName);
+
+        // Define variation groups: each group maps to a canonical name
+        $variationGroups = [
+            'Commercial Totals' => ['commercial totals'],
+            'Domestic Totals' => ['domestic totals'],
+            'Non-billable Totals' => ['non billable totals', 'non bill totals', 'nonbill totals', 'nonbillable totals'],
+            'Govt.Domestic Totals' => ['govtdomestic totals', 'govt domestic totals'],
+            'Govt. Premises Totals' => ['govtpremises totals', 'govt premises totals'],
+            'Govt. Quarters Totals' => ['govtquarters totals', 'govt quarters totals'],
+            'Industrial Totals' => ['industrial totals'],
+            'Ind. No HC Totals' => ['ind no hc totals', 'indno hc totals', 'ind nohc totals', 'indnohc totals',
+                                     'ind no hc customers totals', 'indno hc customers totals'],
+        ];
+
+        foreach ($variationGroups as $canonical => $variants) {
+            if (in_array($normalized, $variants)) {
+                Log::info('Standardized main description name', [
+                    'raw' => $rawName,
+                    'canonical' => $canonical
+                ]);
+                return $canonical;
+            }
+        }
+
+        // Fallback: try partial matching against canonical names
+        foreach (self::MAIN_DESCRIPTIONS as $canonical) {
+            $canonicalNorm = $this->normalizeForMatching($canonical);
+            if ($normalized === $canonicalNorm) {
+                Log::info('Standardized main description name via normalized match', [
+                    'raw' => $rawName,
+                    'canonical' => $canonical
+                ]);
+                return $canonical;
+            }
+        }
+
+        // If no match found, return as-is and log a warning
+        Log::warning('Could not standardize main description name - using raw value', [
+            'raw' => $rawName,
+            'normalized' => $normalized
+        ]);
+        return $rawName;
+    }
+
     public function parse($path, $includeCst = false)
     {
         Log::info('Starting Excel file parsing process', [
@@ -49,29 +141,20 @@ class ExcelParserService
         $currentCostCenter = null;
         $mainDescBuffer = [];
         $overallTotals = [];
-        $mainDescNames = [
-            'Commercial Totals',
-            'Domestic Totals',
-            'Non-billable Totals',
-            'Govt.Domestic Totals',
-            'Govt. Premises Totals',
-            'Govt. Quarters Totals',
-            'Industrial Totals',
-            'Ind. No HC Totals',
-        ];
+        $mainDescNames = self::MAIN_DESCRIPTIONS;
 
-        // Add normalized versions of the names for matching
-        $normalizedMainDescNames = array_map(function($name) {
-            // Normalize Govt.Domestic Totals to handle both dot and space variations
-            if ($name === 'Govt.Domestic Totals') {
-                return ['Govt.Domestic Totals', 'Govt. Domestic Totals'];
-            }
-            // Normalize Govt. Premises Totals to handle single and double space variations
-            if ($name === 'Govt. Premises Totals') {
-                return ['Govt. Premises Totals', 'Govt.  Premises Totals'];
-            }
-            return [$name];
-        }, $mainDescNames);
+        // Build comprehensive variation lists for matching overall totals
+        // Each entry maps to its canonical name via the standardizeMainDescriptionName() method
+        $normalizedMainDescNames = [
+            ['Commercial Totals'],
+            ['Domestic Totals'],
+            ['Non-billable Totals', 'Non-Bill Totals', 'Non Bill Totals'],
+            ['Govt.Domestic Totals', 'Govt. Domestic Totals', 'Govt Domestic Totals'],
+            ['Govt. Premises Totals', 'Govt.Premises Totals', 'Govt.  Premises Totals', 'Govt Premises Totals'],
+            ['Govt. Quarters Totals', 'Govt.Quarters Totals', 'Govt Quarters Totals'],
+            ['Industrial Totals'],
+            ['Ind. No HC Totals', 'Ind.No HC Totals', 'Ind No HC Totals', 'Ind. No HC Customers Totals'],
+        ];
 
         Log::info('Started parsing Excel file');
 
@@ -125,7 +208,7 @@ class ExcelParserService
                             ]);
                             
                             // Use the standard version for storage
-                            $standardMainDesc = $mainDescNames[array_search($mainDescVariations[0], $mainDescNames)];
+                            $standardMainDesc = $this->standardizeMainDescriptionName($mainDescVariations[0]);
                             
                             // Try to find subrows using dynamic description types
                             $subTypes = $expectedDescriptionTypes;
@@ -188,7 +271,7 @@ class ExcelParserService
             // Detect Main Total row with cost center: e.g., "CC1A01840 Commercial Totals"
             if (preg_match('/^CC(\w{7})\s+(.+ Totals)$/', $descText, $matches)) {
                 $code = $matches[1];
-                $mainDesc = $matches[2];
+                $mainDesc = $this->standardizeMainDescriptionName($matches[2]);
 
                 if ($currentCostCenter !== $code) {
                     if ($currentCostCenter && !empty($mainDescBuffer)) {
@@ -216,7 +299,12 @@ class ExcelParserService
                 // Look back up to descriptionTypesCount rows to find sub-rows
                 for ($j = 1; $j <= $descriptionTypesCount && ($i - $j) >= 7; $j++) {
                     $subRow = $rows[$i - $j] ?? null;
-                    if (!$subRow || empty($subRow['A']) || !empty($subRow['B'])) {
+                    if (!$subRow || empty($subRow['A'])) {
+                        continue;
+                    }
+                    // Skip rows that belong to a different cost center
+                    $subCostCenter = trim($subRow['B'] ?? '');
+                    if (!empty($subCostCenter) && $subCostCenter !== $code) {
                         continue;
                     }
                     
