@@ -77,16 +77,34 @@ class ComparisonService
             
         $result['summary']['total_cost_centers'] = count($allCodes);
         
+        // Determine if CST is included
+        $includeCst = false;
+        foreach ($costCenters1 as $cc) {
+            foreach ($cc['main_descriptions'] ?? [] as $md) {
+                foreach ($md['description_types'] ?? [] as $dt) {
+                    if ($dt['type'] === 'CST') {
+                        $includeCst = true;
+                        break 3;
+                    }
+                }
+            }
+        }
+        if (!$includeCst) {
+            foreach ($costCenters2 as $cc) {
+                foreach ($cc['main_descriptions'] ?? [] as $md) {
+                    foreach ($md['description_types'] ?? [] as $dt) {
+                        if ($dt['type'] === 'CST') {
+                            $includeCst = true;
+                            break 3;
+                        }
+                    }
+                }
+            }
+        }
+        
         foreach ($allCodes as $code) {
             $cc1 = $costCenters1->firstWhere('code', $code);
             $cc2 = $costCenters2->firstWhere('code', $code);
-            
-            $comparison = [
-                'code' => $code,
-                'exists_in_file1' => !is_null($cc1),
-                'exists_in_file2' => !is_null($cc2),
-                'main_descriptions' => []
-            ];
             
             // Update summary counters
             if ($cc1 && $cc2) {
@@ -97,8 +115,25 @@ class ComparisonService
                 $result['summary']['only_in_file2']++;
             }
             
-            // Compare main descriptions if both exist
-            if ($cc1 && $cc2) {
+            // If a cost center is missing from one file, create a zero-value version
+            // using the other file's structure as a template
+            if ($cc1 && !$cc2) {
+                Log::info('Cost center ' . $code . ' missing in file 2 - creating zero-value entry');
+                $cc2 = $this->createZeroCostCenter($code, $cc1, $includeCst);
+            } elseif (!$cc1 && $cc2) {
+                Log::info('Cost center ' . $code . ' missing in file 1 - creating zero-value entry');
+                $cc1 = $this->createZeroCostCenter($code, $cc2, $includeCst);
+            }
+            
+            $comparison = [
+                'code' => $code,
+                'exists_in_file1' => true,
+                'exists_in_file2' => true,
+                'main_descriptions' => []
+            ];
+            
+            // Compare main descriptions (both now always exist)
+            {
                 // Calculate cost center totals for both files
                 $costCenterTotal1 = [
                     'billing_total' => 0,
@@ -125,15 +160,37 @@ class ComparisonService
                 $mainDescs1 = collect($cc1['main_descriptions'] ?? []);
                 $mainDescs2 = collect($cc2['main_descriptions'] ?? []);
                 
-                // Get all unique main description names
-                $allMainDescNames = $mainDescs1->pluck('name')
-                    ->merge($mainDescs2->pluck('name'))
-                    ->unique()
-                    ->values();
+                // Build a canonical mapping to handle any remaining name variations
+                // This is a safety net in case the parser didn't fully standardize names
+                $canonicalNames = [];
+                $nameMapping = []; // maps raw name → canonical name
+                
+                foreach ($mainDescs1->pluck('name') as $name) {
+                    $norm = $this->normalizeDescForMatching($name);
+                    if (!isset($canonicalNames[$norm])) {
+                        $canonicalNames[$norm] = $name;
+                    }
+                    $nameMapping[$name] = $canonicalNames[$norm];
+                }
+                foreach ($mainDescs2->pluck('name') as $name) {
+                    $norm = $this->normalizeDescForMatching($name);
+                    if (!isset($canonicalNames[$norm])) {
+                        $canonicalNames[$norm] = $name;
+                    }
+                    $nameMapping[$name] = $canonicalNames[$norm];
+                }
+                
+                // Get all unique CANONICAL main description names
+                $allMainDescNames = collect(array_values($canonicalNames))->unique()->values();
                 
                 foreach ($allMainDescNames as $mainDescName) {
-                    $md1 = $mainDescs1->firstWhere('name', $mainDescName);
-                    $md2 = $mainDescs2->firstWhere('name', $mainDescName);
+                    // Find matching descriptions using canonical mapping
+                    $md1 = $mainDescs1->first(function ($md) use ($mainDescName, $nameMapping) {
+                        return ($nameMapping[$md['name']] ?? $md['name']) === $mainDescName;
+                    });
+                    $md2 = $mainDescs2->first(function ($md) use ($mainDescName, $nameMapping) {
+                        return ($nameMapping[$md['name']] ?? $md['name']) === $mainDescName;
+                    });
                     
                     $mainDescComparison = [
                         'name' => $mainDescName,
@@ -295,15 +352,35 @@ class ComparisonService
         $overallTotals1 = collect($file1->data['overall_totals'] ?? []);
         $overallTotals2 = collect($file2->data['overall_totals'] ?? []);
         
-        // Get all unique overall main description names
-        $allOverallMainDescNames = $overallTotals1->pluck('name')
-            ->merge($overallTotals2->pluck('name'))
-            ->unique()
-            ->values();
+        // Build canonical mapping for overall totals (same fuzzy approach)
+        $overallCanonicalNames = [];
+        $overallNameMapping = [];
+        
+        foreach ($overallTotals1->pluck('name') as $name) {
+            $norm = $this->normalizeDescForMatching($name);
+            if (!isset($overallCanonicalNames[$norm])) {
+                $overallCanonicalNames[$norm] = $name;
+            }
+            $overallNameMapping[$name] = $overallCanonicalNames[$norm];
+        }
+        foreach ($overallTotals2->pluck('name') as $name) {
+            $norm = $this->normalizeDescForMatching($name);
+            if (!isset($overallCanonicalNames[$norm])) {
+                $overallCanonicalNames[$norm] = $name;
+            }
+            $overallNameMapping[$name] = $overallCanonicalNames[$norm];
+        }
+        
+        // Get all unique CANONICAL overall main description names
+        $allOverallMainDescNames = collect(array_values($overallCanonicalNames))->unique()->values();
             
         foreach ($allOverallMainDescNames as $mainDescName) {
-            $md1 = $overallTotals1->firstWhere('name', $mainDescName);
-            $md2 = $overallTotals2->firstWhere('name', $mainDescName);
+            $md1 = $overallTotals1->first(function ($md) use ($mainDescName, $overallNameMapping) {
+                return ($overallNameMapping[$md['name']] ?? $md['name']) === $mainDescName;
+            });
+            $md2 = $overallTotals2->first(function ($md) use ($mainDescName, $overallNameMapping) {
+                return ($overallNameMapping[$md['name']] ?? $md['name']) === $mainDescName;
+            });
             
             $mainDescComparison = [
                 'name' => $mainDescName,
@@ -434,6 +511,76 @@ class ComparisonService
     }
     
     /**
+     * Create a zero-value financial data structure
+     * 
+     * @return array Financial data with all zeros
+     */
+    private function createZeroFinancialData()
+    {
+        return [
+            'billing_total' => 0,
+            'receipts_total' => 0,
+            'crbal_total' => 0,
+            'no_accounts' => 0,
+            'outstanding_balance' => 0,
+            'current_no_accounts' => 0,
+            'current_balance' => 0,
+            'aging' => [
+                'Overdue > 1 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 2 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 3 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 6 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 12 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 18 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 24 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 30 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 36 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 42 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 48 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 54 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 60 month' => ['no_accounts' => 0, 'balance' => 0],
+            ]
+        ];
+    }
+
+    /**
+     * Create a zero-value cost center structure based on an existing cost center's shape
+     * 
+     * @param string $code The cost center code
+     * @param array $referenceCc The existing cost center to use as template for structure
+     * @param bool $includeCst Whether CST is included
+     * @return array A cost center with the same main descriptions but all zero values
+     */
+    private function createZeroCostCenter($code, $referenceCc, $includeCst = false)
+    {
+        $zeroFinancial = $this->createZeroFinancialData();
+        $descriptionTypes = \App\Helpers\DescriptionTypesHelper::getTypes($includeCst);
+        
+        $mainDescriptions = [];
+        foreach ($referenceCc['main_descriptions'] ?? [] as $md) {
+            $zeroDescTypes = [];
+            foreach ($descriptionTypes as $type) {
+                $zeroDescTypes[] = [
+                    'type' => $type,
+                    'data' => $zeroFinancial
+                ];
+            }
+            
+            $mainDescriptions[] = [
+                'name' => $md['name'],
+                'description_types' => $zeroDescTypes,
+                'main_total' => $zeroFinancial
+            ];
+        }
+        
+        return [
+            'code' => $code,
+            'main_descriptions' => $mainDescriptions,
+            'cost_center_total' => []
+        ];
+    }
+
+    /**
      * Compare financial data between two arrays
      * 
      * @param array $data1 Financial data from file 1
@@ -504,4 +651,21 @@ class ComparisonService
         
         return $differences;
     }
-} 
+
+    /**
+     * Normalize a main description name for fuzzy matching.
+     * Removes periods, hyphens, extra spaces, and converts to lowercase.
+     * This is a safety net for matching names that weren't fully standardized by the parser.
+     *
+     * @param string $name The main description name
+     * @return string Normalized name for matching
+     */
+    private function normalizeDescForMatching(string $name): string
+    {
+        $normalized = trim($name);
+        $normalized = str_replace('.', '', $normalized);
+        $normalized = str_replace('-', ' ', $normalized);
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+        return strtolower($normalized);
+    }
+}

@@ -188,6 +188,142 @@
             margin-top: 0.2rem;
             font-size: 0.9rem;
         }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(44, 62, 80, 0.85);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            backdrop-filter: blur(4px);
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .loading-card {
+            background: white;
+            border-radius: 16px;
+            padding: 3rem 3.5rem;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 420px;
+            width: 90%;
+            animation: slideUp 0.4s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .loading-spinner {
+            width: 64px;
+            height: 64px;
+            border: 5px solid #e0e0e0;
+            border-top: 5px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1.5rem auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--dark-color);
+            margin-bottom: 0.5rem;
+        }
+
+        .loading-message {
+            font-size: 0.95rem;
+            color: #7f8c8d;
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+
+        .loading-progress {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: #95a5a6;
+        }
+
+        .loading-progress .dot {
+            width: 6px;
+            height: 6px;
+            background: var(--primary-color);
+            border-radius: 50%;
+            animation: pulse 1.4s ease-in-out infinite;
+        }
+
+        .loading-progress .dot:nth-child(2) { animation-delay: 0.2s; }
+        .loading-progress .dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes pulse {
+            0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1.2); }
+        }
+
+        /* Success state */
+        .loading-card.success .loading-spinner {
+            border: 5px solid var(--success-color);
+            border-top: 5px solid var(--success-color);
+            animation: none;
+            position: relative;
+        }
+
+        .loading-card.success .loading-spinner::after {
+            content: '\f00c';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.8rem;
+            color: var(--success-color);
+        }
+
+        /* Error state */
+        .loading-card.error .loading-spinner {
+            border: 5px solid #e74c3c;
+            border-top: 5px solid #e74c3c;
+            animation: none;
+            position: relative;
+        }
+
+        .loading-card.error .loading-spinner::after {
+            content: '\f00d';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.8rem;
+            color: #e74c3c;
+        }
     </style>
 </head>
 <body>
@@ -264,6 +400,23 @@
         </div>
     </div>
     
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-card" id="loadingCard">
+            <div class="loading-spinner" id="loadingSpinner"></div>
+            <div class="loading-title" id="loadingTitle">Normalizing File</div>
+            <div class="loading-message" id="loadingMessage">
+                Please wait while your BRAIN file is being processed...
+            </div>
+            <div class="loading-progress" id="loadingProgress">
+                <span class="dot"></span>
+                <span class="dot"></span>
+                <span class="dot"></span>
+                <span style="margin-left: 0.25rem;" id="loadingTimer">Elapsed: 0s</span>
+            </div>
+        </div>
+    </div>
+
     <footer class="footer">
         <div class="container">
             <p>IWK Finance Comparison Tool &copy; {{ date('Y') }}</p>
@@ -274,19 +427,114 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
         $(document).ready(function() {
-            // Handle form submission
-            $('#normalizeForm').on('submit', function() {
-                if (this.checkValidity()) {
-                    // Show processing message
-                    $('#submitBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Processing...');
-                    
-                    // Set a timeout to reset the form after the file download has likely completed
-                    setTimeout(function() {
-                        // Reset form state
-                        $('#normalizeForm')[0].reset();
-                        $('#submitBtn').prop('disabled', false).html('<i class="fas fa-cog me-1"></i> Normalize File');
-                    }, 5000); // 5 seconds should be enough time for most downloads to start
+            let timerInterval = null;
+            let elapsedSeconds = 0;
+
+            function showLoading() {
+                elapsedSeconds = 0;
+                $('#loadingCard').removeClass('success error');
+                $('#loadingTitle').text('Normalizing File');
+                $('#loadingMessage').text('Please wait while your BRAIN file is being processed...');
+                $('#loadingProgress').show();
+                $('#loadingTimer').text('Elapsed: 0s');
+                $('#loadingOverlay').addClass('active');
+                $('#submitBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Processing...');
+
+                timerInterval = setInterval(function() {
+                    elapsedSeconds++;
+                    $('#loadingTimer').text('Elapsed: ' + elapsedSeconds + 's');
+                }, 1000);
+            }
+
+            function hideLoading(state, title, message) {
+                clearInterval(timerInterval);
+
+                if (state === 'success') {
+                    $('#loadingCard').addClass('success');
+                    $('#loadingTitle').text(title || 'Normalization Complete!');
+                    $('#loadingMessage').text(message || 'Your file has been downloaded successfully.');
+                } else if (state === 'error') {
+                    $('#loadingCard').addClass('error');
+                    $('#loadingTitle').text(title || 'Processing Failed');
+                    $('#loadingMessage').text(message || 'An error occurred while processing the file.');
                 }
+
+                $('#loadingProgress').hide();
+
+                // Auto-hide overlay after a delay
+                setTimeout(function() {
+                    $('#loadingOverlay').removeClass('active');
+                    // Reset form and button
+                    $('#normalizeForm')[0].reset();
+                    $('#submitBtn').prop('disabled', false).html('<i class="fas fa-cog me-1"></i> Normalize');
+                }, state === 'success' ? 2000 : 3000);
+            }
+
+            // Handle form submission via AJAX
+            $('#normalizeForm').on('submit', function(e) {
+                e.preventDefault();
+
+                if (!this.checkValidity()) {
+                    this.reportValidity();
+                    return;
+                }
+
+                showLoading();
+
+                var formData = new FormData(this);
+
+                fetch('{{ route("normalize.process") }}', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(function(response) {
+                    if (!response.ok) {
+                        // Try to parse error from JSON response
+                        return response.json().then(function(data) {
+                            throw new Error(data.error || 'Failed to process file.');
+                        }).catch(function(parseErr) {
+                            // If not JSON, throw generic error
+                            if (parseErr.message && parseErr.message !== 'Failed to process file.') {
+                                throw parseErr;
+                            }
+                            throw new Error('Failed to process file. Please check your file and try again.');
+                        });
+                    }
+
+                    // Get filename from Content-Disposition header
+                    var disposition = response.headers.get('Content-Disposition');
+                    var filename = 'normalized_file.xlsx';
+                    if (disposition && disposition.indexOf('filename=') !== -1) {
+                        var filenameMatch = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                        if (filenameMatch && filenameMatch[1]) {
+                            filename = filenameMatch[1].replace(/['"]/g, '');
+                        }
+                    }
+
+                    return response.blob().then(function(blob) {
+                        return { blob: blob, filename: filename };
+                    });
+                })
+                .then(function(result) {
+                    // Create download link and trigger it
+                    var url = window.URL.createObjectURL(result.blob);
+                    var a = document.createElement('a');
+                    a.href = url;
+                    a.download = result.filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+
+                    hideLoading('success');
+                })
+                .catch(function(error) {
+                    console.error('Normalization error:', error);
+                    hideLoading('error', 'Processing Failed', error.message);
+                });
             });
         });
     </script>

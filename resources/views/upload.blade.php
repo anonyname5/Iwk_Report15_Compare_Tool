@@ -305,6 +305,142 @@
             margin-top: 0.2rem;
             font-size: 0.9rem;
         }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(44, 62, 80, 0.85);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            backdrop-filter: blur(4px);
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .loading-card {
+            background: white;
+            border-radius: 16px;
+            padding: 3rem 3.5rem;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 420px;
+            width: 90%;
+            animation: slideUp 0.4s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .loading-spinner-circle {
+            width: 64px;
+            height: 64px;
+            border: 5px solid #e0e0e0;
+            border-top: 5px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spinOverlay 1s linear infinite;
+            margin: 0 auto 1.5rem auto;
+        }
+
+        @keyframes spinOverlay {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--dark-color);
+            margin-bottom: 0.5rem;
+        }
+
+        .loading-message {
+            font-size: 0.95rem;
+            color: #7f8c8d;
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+
+        .loading-progress {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: #95a5a6;
+        }
+
+        .loading-progress .dot {
+            width: 6px;
+            height: 6px;
+            background: var(--primary-color);
+            border-radius: 50%;
+            animation: pulse 1.4s ease-in-out infinite;
+        }
+
+        .loading-progress .dot:nth-child(2) { animation-delay: 0.2s; }
+        .loading-progress .dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes pulse {
+            0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1.2); }
+        }
+
+        /* Success state */
+        .loading-card.success .loading-spinner-circle {
+            border: 5px solid var(--success-color);
+            border-top: 5px solid var(--success-color);
+            animation: none;
+            position: relative;
+        }
+
+        .loading-card.success .loading-spinner-circle::after {
+            content: '\f00c';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.8rem;
+            color: var(--success-color);
+        }
+
+        /* Error state */
+        .loading-card.error .loading-spinner-circle {
+            border: 5px solid var(--danger-color);
+            border-top: 5px solid var(--danger-color);
+            animation: none;
+            position: relative;
+        }
+
+        .loading-card.error .loading-spinner-circle::after {
+            content: '\f00d';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.8rem;
+            color: var(--danger-color);
+        }
     </style>
 </head>
 <body>
@@ -424,6 +560,23 @@
         </div>
     </div>
     
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-card" id="loadingCard">
+            <div class="loading-spinner-circle" id="loadingSpinner"></div>
+            <div class="loading-title" id="loadingTitle">Processing Files</div>
+            <div class="loading-message" id="loadingMessage">
+                Uploading and comparing your files. This may take a moment...
+            </div>
+            <div class="loading-progress" id="loadingProgress">
+                <span class="dot"></span>
+                <span class="dot"></span>
+                <span class="dot"></span>
+                <span style="margin-left: 0.25rem;" id="loadingTimer">Elapsed: 0s</span>
+            </div>
+        </div>
+    </div>
+
     <footer class="footer">
         <div class="container">
             <p>IWK Finance Comparison Tool &copy; {{ date('Y') }}</p>
@@ -434,6 +587,40 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
         $(document).ready(function() {
+            let timerInterval = null;
+            let elapsedSeconds = 0;
+
+            function showLoading() {
+                elapsedSeconds = 0;
+                $('#loadingCard').removeClass('success error');
+                $('#loadingTitle').text('Processing Files');
+                $('#loadingMessage').text('Uploading and comparing your files. This may take a moment...');
+                $('#loadingProgress').show();
+                $('#loadingTimer').text('Elapsed: 0s');
+                $('#loadingOverlay').addClass('active');
+
+                timerInterval = setInterval(function() {
+                    elapsedSeconds++;
+                    $('#loadingTimer').text('Elapsed: ' + elapsedSeconds + 's');
+                }, 1000);
+            }
+
+            function hideLoading(state, title, message) {
+                clearInterval(timerInterval);
+
+                if (state === 'success') {
+                    $('#loadingCard').addClass('success');
+                    $('#loadingTitle').text(title || 'Processing Complete!');
+                    $('#loadingMessage').text(message || 'Files compared successfully. Redirecting to results...');
+                } else if (state === 'error') {
+                    $('#loadingCard').addClass('error');
+                    $('#loadingTitle').text(title || 'Processing Failed');
+                    $('#loadingMessage').text(message || 'An error occurred while processing the files.');
+                }
+
+                $('#loadingProgress').hide();
+            }
+
             // File input change event for first file
             $('#file_1').on('change', function() {
                 var fileName = $(this).val().split('\\').pop();
@@ -471,21 +658,18 @@
                     processData: false,
                     contentType: false,
                     beforeSend: function() {
+                        showLoading();
                         $('#submitBtn').prop('disabled', true)
                             .html('<span class="spinner"></span> Processing...');
                     },
                     success: function(response) {
                         if (response.success) {
-                            // Add success message
-                            $('<div class="alert alert-success alert-dismissible fade show" role="alert">' +
-                                '<i class="fas fa-check-circle me-2"></i>Files processed successfully! Redirecting...' +
-                                '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
-                                '</div>').insertBefore('#uploadFormCard');
+                            hideLoading('success', 'Processing Complete!', 'Files compared successfully. Redirecting to results...');
                                 
-                            // Redirect after a short delay
+                            // Redirect after showing success state
                             setTimeout(function() {
                                 window.location.href = response.redirect || "{{ route('excel.index') }}";
-                            }, 1500);
+                            }, 2000);
                         }
                     },
                     error: function(xhr) {
@@ -493,15 +677,22 @@
                         if (xhr.responseJSON && xhr.responseJSON.message) {
                             errorMsg = xhr.responseJSON.message;
                         }
-                        
-                        $('.alert-danger').remove();
-                        $('<div class="alert alert-danger alert-dismissible fade show" role="alert">' + 
-                            '<i class="fas fa-exclamation-circle me-2"></i>' + errorMsg + 
-                            '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
-                            '</div>').insertBefore('#uploadFormCard');
-                        
-                        $('#submitBtn').prop('disabled', false)
-                            .html('<i class="fas fa-upload me-1"></i> Upload & Process');
+
+                        hideLoading('error', 'Processing Failed', errorMsg);
+
+                        // Auto-hide overlay and show inline error after delay
+                        setTimeout(function() {
+                            $('#loadingOverlay').removeClass('active');
+
+                            $('.alert-danger').remove();
+                            $('<div class="alert alert-danger alert-dismissible fade show" role="alert">' + 
+                                '<i class="fas fa-exclamation-circle me-2"></i>' + errorMsg + 
+                                '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
+                                '</div>').insertBefore('#uploadFormCard');
+                            
+                            $('#submitBtn').prop('disabled', false)
+                                .html('<i class="fas fa-upload me-1"></i> Upload & Process');
+                        }, 3000);
                     }
                 });
             });

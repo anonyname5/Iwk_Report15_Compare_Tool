@@ -65,7 +65,6 @@ class ExcelJson extends Model
             if ($file1 && $file2) {
                 // Check if there are differences by doing a basic comparison
                 $hasChanges = false;
-                $missingCostCenters = false;
                 
                 // Check if cost centers exist in both files
                 $costCenters1 = collect($file1->data['cost_centers'] ?? []);
@@ -74,13 +73,13 @@ class ExcelJson extends Model
                 $codes1 = $costCenters1->pluck('code')->toArray();
                 $codes2 = $costCenters2->pluck('code')->toArray();
                 
-                // Check if any cost centers are missing in either file
+                // If cost centers differ between files, that means there are changes
+                // (missing cost centers are treated as having zero values during comparison)
                 if (count(array_diff($codes1, $codes2)) > 0 || count(array_diff($codes2, $codes1)) > 0) {
-                    $missingCostCenters = true;
                     $hasChanges = true;
                 }
                 
-                // Check for changes in common cost centers
+                // Check for value changes across all cost centers
                 if (!$hasChanges) {
                     foreach ($costCenters1 as $cc1) {
                         $cc2 = $costCenters2->firstWhere('code', $cc1['code']);
@@ -113,7 +112,7 @@ class ExcelJson extends Model
                     'file2' => $file2,
                     'created_at' => $file1->created_at,
                     'has_changes' => $hasChanges,
-                    'missing_cost_centers' => $missingCostCenters
+                    'missing_cost_centers' => false
                 ]);
             }
         }
