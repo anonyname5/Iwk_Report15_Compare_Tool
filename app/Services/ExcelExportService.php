@@ -234,23 +234,6 @@ class ExcelExportService
         // Cost center comparison
         foreach ($comparisonData['cost_centers'] as $ccComparison) {
             $code = $ccComparison['code'];
-            $existsInFile1 = $ccComparison['exists_in_file1'];
-            $existsInFile2 = $ccComparison['exists_in_file2'];
-            
-            // Handle missing cost centers
-            if (!$existsInFile1 || !$existsInFile2) {
-                $sheet->setCellValue('A' . $row, $code);
-                $sheet->setCellValue('B' . $row, $existsInFile1 ? 'Missing in File 2' : 'Missing in File 1');
-                $sheet->setCellValue('H' . $row, $existsInFile1 ? 'In File 1 Only' : 'In File 2 Only');
-                
-                // Set background color
-                $sheet->getStyle('A' . $row . ':H' . $row)->getFill()
-                    ->setFillType(Fill::FILL_SOLID)
-                    ->getStartColor()->setRGB('FFF9C4'); // Light yellow
-                
-                $row++;
-                continue;
-            }
             
             // Add cost center total differences if they exist
             if (isset($ccComparison['cost_center_total']) && $ccComparison['cost_center_total']['has_differences']) {
@@ -735,30 +718,30 @@ class ExcelExportService
         
         // Process cost centers
         foreach ($comparisonData['cost_centers'] as $costCenter) {
-            // Skip if not present in file2 (we're making a new version that looks like file2)
-            if (!$costCenter['exists_in_file2']) {
-                Log::info('Skipping cost center ' . $costCenter['code'] . ' - not in file 2');
-                continue;
-            }
             
             Log::info('Processing cost center: ' . $costCenter['code']);
             
-            $cc2 = null;
+            // Get the actual cost center data from both files
+            $costCenters2 = collect($file2->data['cost_centers']);
+            $cc2 = $costCenters2->firstWhere('code', $costCenter['code']);
             
-            // Get the actual cost center data
-            if ($costCenter['exists_in_file2']) {
-                $costCenters2 = collect($file2->data['cost_centers']);
-                $cc2 = $costCenters2->firstWhere('code', $costCenter['code']);
+            $costCenters1 = collect($file1->data['cost_centers']);
+            $cc1 = $costCenters1->firstWhere('code', $costCenter['code']);
+            
+            // If cost center is missing from file2, create a zero-value structure based on file1
+            if (!$cc2 && $cc1) {
+                Log::info('Cost center ' . $costCenter['code'] . ' missing in file 2 - using zero-value structure from file 1');
+                $cc2 = $this->createZeroCostCenterForExport($costCenter['code'], $cc1, $includeCst);
             }
             
-            $cc1 = null;
-            if ($costCenter['exists_in_file1']) {
-                $costCenters1 = collect($file1->data['cost_centers']);
-                $cc1 = $costCenters1->firstWhere('code', $costCenter['code']);
+            // If cost center is missing from file1, create a zero-value structure based on file2
+            if (!$cc1 && $cc2) {
+                Log::info('Cost center ' . $costCenter['code'] . ' missing in file 1 - using zero-value structure from file 2');
+                $cc1 = $this->createZeroCostCenterForExport($costCenter['code'], $cc2, $includeCst);
             }
             
             if (!$cc2) {
-                Log::warning('Could not find cost center ' . $costCenter['code'] . ' in file 2 data');
+                Log::warning('Could not find cost center ' . $costCenter['code'] . ' in either file');
                 continue;
             }
             
@@ -886,9 +869,6 @@ class ExcelExportService
         
         // Now, find differences and display them with original and new values
         foreach ($comparisonData['cost_centers'] as $costCenter) {
-            if (!$costCenter['exists_in_file1'] || !$costCenter['exists_in_file2']) {
-                continue;
-            }
             
             Log::info('Processing differences for cost center: ' . $costCenter['code']);
             
@@ -1053,9 +1033,6 @@ class ExcelExportService
             
             // Process differences in main descriptions
             foreach ($costCenter['main_descriptions'] as $mainDesc) {
-                if (!$mainDesc['exists_in_file1'] || !$mainDesc['exists_in_file2']) {
-                    continue;
-                }
                 
                 Log::info('  Processing differences for main description: ' . $mainDesc['name']);
                 
@@ -1888,6 +1865,67 @@ class ExcelExportService
         Log::info('Excel file saved to: ' . $filepath);
         
         return $filepath;
+    }
+    
+    /**
+     * Create a zero-value cost center structure for export purposes
+     * 
+     * @param string $code The cost center code
+     * @param array $referenceCc The existing cost center to use as template
+     * @param bool $includeCst Whether CST is included
+     * @return array A cost center with the same structure but all zero values
+     */
+    private function createZeroCostCenterForExport($code, $referenceCc, $includeCst = false)
+    {
+        $zeroFinancial = [
+            'billing_total' => 0,
+            'receipts_total' => 0,
+            'crbal_total' => 0,
+            'no_accounts' => 0,
+            'outstanding_balance' => 0,
+            'current_no_accounts' => 0,
+            'current_balance' => 0,
+            'aging' => [
+                'Overdue > 1 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 2 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 3 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 6 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 12 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 18 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 24 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 30 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 36 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 42 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 48 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 54 month' => ['no_accounts' => 0, 'balance' => 0],
+                'Overdue > 60 month' => ['no_accounts' => 0, 'balance' => 0],
+            ]
+        ];
+        
+        $descriptionTypes = DescriptionTypesHelper::getTypes($includeCst);
+        
+        $mainDescriptions = [];
+        foreach ($referenceCc['main_descriptions'] ?? [] as $md) {
+            $zeroDescTypes = [];
+            foreach ($descriptionTypes as $type) {
+                $zeroDescTypes[] = [
+                    'type' => $type,
+                    'data' => $zeroFinancial
+                ];
+            }
+            
+            $mainDescriptions[] = [
+                'name' => $md['name'],
+                'description_types' => $zeroDescTypes,
+                'main_total' => $zeroFinancial
+            ];
+        }
+        
+        return [
+            'code' => $code,
+            'main_descriptions' => $mainDescriptions,
+            'cost_center_total' => []
+        ];
     }
     
     /**
