@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use App\Helpers\DescriptionTypesHelper;
+use App\Helpers\CostCentersHelper;
 
 class NormalizationController extends Controller
 {
@@ -22,6 +23,97 @@ class NormalizationController extends Controller
         'Industrial Totals',
         'Ind. No HC Totals',
     ];
+
+    
+    /**
+     * Normalize a description for flexible matching
+     * Removes periods, hyphens, extra spaces, and handles common variations
+     * 
+     * @param string $desc The description to normalize
+     * @return string Normalized description
+     */
+    private function normalizeDescription($desc)
+    {
+        $normalized = trim($desc);
+        
+        // Remove trailing colon
+        $normalized = rtrim($normalized, ':');
+        
+        // Remove periods (Govt. -> Govt, Ind. -> Ind)
+        $normalized = str_replace('.', '', $normalized);
+        
+        // Remove hyphens (Non-Bill -> Non Bill, Non-billable -> Non billable)
+        $normalized = str_replace('-', ' ', $normalized);
+        
+        // Normalize multiple spaces to single space
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+        
+        // Remove common prefixes (cost center codes like "1A01840")
+        $normalized = preg_replace('/^[0-9A-Z]+\s+/', '', $normalized);
+        
+        // Remove "CC" prefix if present
+        $normalized = preg_replace('/^CC\s*/i', '', $normalized);
+        
+        // Convert to lowercase for case-insensitive comparison
+        $normalized = strtolower($normalized);
+        
+        return $normalized;
+    }
+    
+    /**
+     * Check if two descriptions match after normalization
+     * Handles variations like:
+     * - "Non-Bill" vs "Non-billable"
+     * - "Govt.Domestic" vs "Govt Domestic"
+     * - "Ind. No HC" vs "Ind.No HC" vs "Ind. No HC Customers"
+     * - Cost center prefixes like "1A01840 Govt Premises"
+     * 
+     * @param string $desc1 First description
+     * @param string $desc2 Second description
+     * @return bool True if descriptions match
+     */
+    private function descriptionsMatch($desc1, $desc2)
+    {
+        $norm1 = $this->normalizeDescription($desc1);
+        $norm2 = $this->normalizeDescription($desc2);
+        
+        // Direct match
+        if ($norm1 === $norm2) {
+            return true;
+        }
+        
+        // Handle specific variations
+        // Note: Hyphens are already converted to spaces in normalizeDescription()
+        // so "non-billable" becomes "non billable", "non-bill" becomes "non bill"
+        $variations = [
+            // Non-billable variations (all normalized forms without hyphens)
+            ['non billable totals', 'non bill totals', 'nonbill totals', 'nonbillable totals'],
+            // Govt Domestic variations
+            ['govtdomestic totals', 'govt domestic totals'],
+            // Govt Premises variations
+            ['govtpremises totals', 'govt premises totals'],
+            // Govt Quarters variations
+            ['govtquarters totals', 'govt quarters totals'],
+            // Ind No HC variations
+            ['ind no hc totals', 'indno hc totals', 'ind nohc totals', 'indnohc totals', 
+             'ind no hc customers totals', 'indno hc customers totals', 'ind nohc customers totals', 'indnohc customers totals'],
+        ];
+        
+        foreach ($variations as $group) {
+            if (in_array($norm1, $group) && in_array($norm2, $group)) {
+                return true;
+            }
+        }
+        
+        // Check if one starts with the other (for partial matches)
+        if (strlen($norm1) > 10 && strlen($norm2) > 10) {
+            if (strpos($norm1, $norm2) === 0 || strpos($norm2, $norm1) === 0) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
 
     const TOTAL_COLUMNS = 35;
     const FINANCE_COL_START = 2; // Columns 0-1 are description/cost center
@@ -47,9 +139,18 @@ class NormalizationController extends Controller
         Log::info('Starting file normalization process');
         
         try {
-            $request->validate([
+            $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
                 'br_file' => 'required|file|mimes:xlsx,xls,csv|max:10240' // Add 10MB max size limit
             ]);
+
+            if ($validator->fails()) {
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json([
+                        'error' => $validator->errors()->first()
+                    ], 422);
+                }
+                return back()->withErrors($validator);
+            }
 
             $file = $request->file('br_file');
             $originalFileName = $file->getClientOriginalName();
@@ -93,6 +194,13 @@ class NormalizationController extends Controller
         } catch (\Exception $e) {
             Log::error('Processing failed: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
+
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'error' => 'Failed to process file: ' . $e->getMessage()
+                ], 422);
+            }
+
             return back()->withErrors(['error' => 'Failed to process file: ' . $e->getMessage()]);
         }
     }
@@ -132,7 +240,8 @@ class NormalizationController extends Controller
             }
             Log::info('Identified ' . count($costCenters) . ' unique cost centers');
 
-            $normalizedData = [];
+            // Process each existing cost center and store results keyed by code
+            $costCenterBlocks = [];
 
             foreach ($costCenters as $cc => $ccRows) {
                 Log::info('Processing cost center: ' . $cc . ' with ' . count($ccRows) . ' rows');
@@ -168,8 +277,37 @@ class NormalizationController extends Controller
                 $ccData[] = $blankRow;
                 Log::info('  Added blank row after cost center total');
 
-                $normalizedData = array_merge($normalizedData, $ccData);
+                $costCenterBlocks[$cc] = $ccData;
                 Log::info('  Completed processing for cost center: ' . $cc);
+            }
+            
+            // Create zero-value blocks for any missing cost centers
+            $existingCodes = array_keys($costCenterBlocks);
+            $missingCostCenters = CostCentersHelper::getMissing($existingCodes);
+            if (!empty($missingCostCenters)) {
+                Log::info('Adding ' . count($missingCostCenters) . ' missing cost centers with zero values: ' . implode(', ', $missingCostCenters));
+                foreach ($missingCostCenters as $missingCc) {
+                    $costCenterBlocks[$missingCc] = $this->createZeroCostCenterBlock($missingCc, $includeCst);
+                }
+            } else {
+                Log::info('All required cost centers are present in the file');
+            }
+            
+            // Build normalized data in the correct cost center order
+            $normalizedData = [];
+            
+            // First: output cost centers in the required order
+            foreach (CostCentersHelper::getRequiredCodes() as $cc) {
+                if (isset($costCenterBlocks[$cc])) {
+                    $normalizedData = array_merge($normalizedData, $costCenterBlocks[$cc]);
+                    unset($costCenterBlocks[$cc]);
+                }
+            }
+            
+            // Then: append any extra cost centers not in the required list (in their original order)
+            foreach ($costCenterBlocks as $cc => $ccData) {
+                Log::info('Appending extra cost center not in required list: ' . $cc);
+                $normalizedData = array_merge($normalizedData, $ccData);
             }
             
             // Now process the overall totals section (rows without cost centers)
@@ -218,63 +356,24 @@ class NormalizationController extends Controller
         
         Log::info('    Found ' . count($allMainDescRows) . ' potential main description rows in this cost center');
         
-        // Find existing main total row (check all possible formats)
+        // Find existing main total row using dynamic matching
         foreach ($ccRows as $index => $row) {
             if (empty($row[0])) continue;
             
-            // Normalize by trimming and removing any trailing colon
-            $rowDesc = rtrim(trim($row[0]), ':');
-            $normalizedFullDesc = rtrim(trim($fullMainDesc), ':');
-            $normalizedBaseDesc = rtrim(trim($baseMainDesc), ':');
+            $rowDesc = trim($row[0]);
             
-            // Also check variant with "CC" prefix
-            $ccPrefixDesc = "CC" . $normalizedFullDesc;
+            Log::info('    Comparing row: "' . $rowDesc . '" with "' . $fullMainDesc . '" and "' . $baseMainDesc . '"');
             
-            Log::info('    Comparing row: "' . $rowDesc . '" with normalized forms "' . $normalizedFullDesc . '", "' . $normalizedBaseDesc . '", and "' . $ccPrefixDesc . '"');
-            
-            if ($rowDesc === $normalizedFullDesc || 
-                $rowDesc === $normalizedBaseDesc || 
-                $rowDesc === $ccPrefixDesc) {
+            // Use the new flexible matching method
+            if ($this->descriptionsMatch($rowDesc, $fullMainDesc) || 
+                $this->descriptionsMatch($rowDesc, $baseMainDesc)) {
                 $mainTotalRow = $row;
                 // Standardize the main description format with CC prefix
                 $mainTotalRow[0] = $formattedMainDesc;
                 $mainRowIndex = $index;
                 
-                Log::info('    Found main total row for "' . $row[0] . '" at index ' . $index);
+                Log::info('    Found main total row for "' . $row[0] . '" at index ' . $index . ' (matched via dynamic matching)');
                 break;
-            }
-        }
-
-        if (!$mainTotalRow) {
-            Log::info('    Main total row not found with exact matching - trying flexible matching');
-            
-            // Try again with more flexible matching
-            foreach ($ccRows as $index => $row) {
-                if (empty($row[0])) continue;
-                
-                // More flexible comparison - case insensitive and ignoring prefixes/suffixes
-                $rowText = strtolower(trim($row[0]));
-                $searchText1 = strtolower(trim($fullMainDesc));
-                $searchText2 = strtolower(trim($baseMainDesc));
-                $ccCode = strtolower($cc);
-                
-                // Check multiple patterns:
-                // 1. Exact start match
-                // 2. With CC prefix
-                // 3. Just matching the description part and cost center
-                if (strpos($rowText, $searchText1) === 0 || 
-                    strpos($rowText, $searchText2) === 0 ||
-                    strpos($rowText, "cc" . $searchText1) === 0 ||
-                    strpos($rowText, "cc" . $ccCode) === 0 && strpos($rowText, strtolower($baseMainDesc)) !== false) {
-                    
-                    $mainTotalRow = $row;
-                    // Standardize the main description format with CC prefix
-                    $mainTotalRow[0] = $formattedMainDesc;
-                    $mainRowIndex = $index;
-                    
-                    Log::info('    Found main total row with flexible matching: "' . $row[0] . '" at index ' . $index);
-                    break;
-                }
             }
         }
 
@@ -442,6 +541,51 @@ class NormalizationController extends Controller
         $row[1] = $cc;
         Log::info('    Created new Cost Center Total row: ' . $row[0]);
         return $row;
+    }
+
+    /**
+     * Create a complete zero-value cost center block with all main descriptions and sub-rows
+     * 
+     * @param string $cc The cost center code
+     * @param bool $includeCst Whether to include CST
+     * @return array Array of rows forming a complete cost center block
+     */
+    private function createZeroCostCenterBlock($cc, $includeCst = false)
+    {
+        Log::info('Creating zero-value cost center block for: ' . $cc);
+        
+        $ccData = [];
+        $requiredSubs = $this->getDescriptionTypes($includeCst);
+        
+        foreach (self::MAIN_DESCRIPTIONS as $mainDesc) {
+            // Create zero sub-rows (Connected, Nil, IST, optionally CST)
+            foreach ($requiredSubs as $sub) {
+                $subRow = array_fill(0, self::TOTAL_COLUMNS, 0);
+                $subRow[0] = $sub;
+                $subRow[1] = $cc;
+                $ccData[] = $subRow;
+            }
+            
+            // Create the main description total row
+            $mainTotalRow = array_fill(0, self::TOTAL_COLUMNS, 0);
+            $mainTotalRow[0] = "CC" . $cc . " " . $mainDesc;
+            $mainTotalRow[1] = $cc;
+            $ccData[] = $mainTotalRow;
+        }
+        
+        // Create Cost Center Total row (all zeros)
+        $ccTotal = array_fill(0, self::TOTAL_COLUMNS, 0);
+        $ccTotal[0] = "Cost Center $cc Totals";
+        $ccTotal[1] = $cc;
+        $ccData[] = $ccTotal;
+        
+        // Add blank row after cost center
+        $blankRow = array_fill(0, self::TOTAL_COLUMNS, '');
+        $ccData[] = $blankRow;
+        
+        Log::info('Created zero-value block with ' . count($ccData) . ' rows for cost center: ' . $cc);
+        
+        return $ccData;
     }
 
     private function createCcTotalRowFromMainTotals($cc, $mainTotalRows)
@@ -918,9 +1062,9 @@ class NormalizationController extends Controller
             
             $rowDesc = trim($row[0]);
             
-            // Check if this is the main description we're looking for
-            if (stripos($rowDesc, $mainDesc) !== false) {
-                Log::info('    Found overall main description row: "' . $rowDesc . '" at index ' . $index);
+            // Use dynamic matching instead of simple string search
+            if ($this->descriptionsMatch($rowDesc, $mainDesc)) {
+                Log::info('    Found overall main description row: "' . $rowDesc . '" at index ' . $index . ' (matched via dynamic matching)');
                 
                 // Create a copy of the row and remove any colons from the description
                 $cleanedRow = $row;
