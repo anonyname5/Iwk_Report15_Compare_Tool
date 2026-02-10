@@ -256,7 +256,7 @@
         }
         
         .btn-download {
-            padding: 6px 15px;
+            padding: 6px 12px;
             border-radius: 50px;
             font-weight: 500;
             transition: transform 0.2s, box-shadow 0.2s;
@@ -264,7 +264,7 @@
         
         .btn-download:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
         }
         
         .status-badge {
@@ -420,7 +420,7 @@
         </div>
     </nav>
 
-    <div class="container">
+    <div class="container" id="main-content">
         @if(session('success'))
             <div class="alert alert-success mb-4">
                 <i class="fas fa-check-circle me-2"></i> {{ session('success') }}
@@ -465,19 +465,18 @@
                                         <td>{{ $pair['created_at']->format('M d, Y') }}</td>
                                         <td>
                                             @if($pair['has_changes'])
-                                                @if($pair['missing_cost_centers'])
-                                                    <span class="status-badge status-badge-warning">Structure Changes</span>
-                                                @else
-                                                    <span class="status-badge status-badge-danger">Value Changes</span>
-                                                @endif
+                                                <span class="status-badge status-badge-danger">Value Changes</span>
                                             @else
                                                 <span class="status-badge status-badge-success">No Changes</span>
                                             @endif
                                         </td>
                                         <td>
                                             <div class="btn-group-actions">
-                                                <a href="{{ route('excel.compare', $pair['comparison_name']) }}" class="btn btn-primary btn-download">
-                                                    <i class="fas fa-download me-1"></i> Download
+                                                <a href="{{ route('excel.compare', $pair['comparison_name']) }}" 
+                                                   class="btn btn-primary btn-download"
+                                                   data-bs-toggle="tooltip" 
+                                                   title="Download comparison">
+                                                    <i class="fas fa-download"></i>
                                                 </a>
                                                 <button type="button" 
                                                         class="btn btn-danger btn-delete" 
@@ -575,6 +574,66 @@
                 originalHtml: null
             };
             
+            // Handle download button clicks - show loading spinner until download finishes
+            $('.btn-download').on('click', function(e) {
+                e.preventDefault();
+                
+                var $button = $(this);
+                var originalHtml = $button.html();
+                var downloadUrl = $button.attr('href');
+                
+                // Show spinner
+                $button.html('<i class="fas fa-spinner fa-spin"></i>');
+                $button.addClass('disabled');
+                
+                // Fetch the file as a blob so we know when the download is complete
+                fetch(downloadUrl)
+                    .then(function(response) {
+                        if (!response.ok) {
+                            throw new Error('Download failed');
+                        }
+                        // Extract filename from Content-Disposition header
+                        var disposition = response.headers.get('Content-Disposition');
+                        var filename = 'comparison.xlsx';
+                        if (disposition && disposition.indexOf('filename=') !== -1) {
+                            var matches = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                            if (matches && matches[1]) {
+                                filename = matches[1].replace(/['"]/g, '');
+                            }
+                        }
+                        return response.blob().then(function(blob) {
+                            return { blob: blob, filename: filename };
+                        });
+                    })
+                    .then(function(result) {
+                        // Create a temporary link to trigger the download
+                        var url = window.URL.createObjectURL(result.blob);
+                        var a = document.createElement('a');
+                        a.href = url;
+                        a.download = result.filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        a.remove();
+                        
+                        // Restore button
+                        $button.html(originalHtml);
+                        $button.removeClass('disabled');
+                    })
+                    .catch(function(error) {
+                        // Restore button and show error
+                        $button.html(originalHtml);
+                        $button.removeClass('disabled');
+                        
+                        var alertHtml = '<div class="alert alert-danger alert-dismissible fade show" role="alert">' +
+                            '<i class="fas fa-exclamation-circle me-2"></i>Download failed. Please try again.' +
+                            '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
+                            '</div>';
+                        $('#main-content > .alert').remove();
+                        $('#main-content').prepend(alertHtml);
+                    });
+            });
+            
             // Handle delete button clicks
             $('.btn-delete').on('click', function(e) {
                 e.preventDefault();
@@ -648,8 +707,8 @@
                                 '</div>';
                             
                             // Remove existing alerts and add new one
-                            $('.alert').remove();
-                            $('.container').prepend(alertHtml);
+                            $('#main-content > .alert').remove();
+                            $('#main-content').prepend(alertHtml);
                             
                             // Fade out and remove the row
                             $row.fadeOut(300, function() {
@@ -710,8 +769,8 @@
                     '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
                     '</div>';
                 
-                $('.alert').remove();
-                $('.container').prepend(alertHtml);
+                $('#main-content > .alert').remove();
+                $('#main-content').prepend(alertHtml);
             }
         });
     </script>
