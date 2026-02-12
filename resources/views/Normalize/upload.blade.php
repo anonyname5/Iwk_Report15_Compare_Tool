@@ -25,6 +25,9 @@
             background-color: var(--dark-color);
             padding: 1rem 2rem;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 1030;
         }
         
         .navbar-brand {
@@ -338,8 +341,7 @@
     <div class="main-container container">
         <div class="row mb-4">
             <div class="col">
-                <h2><i class="fas fa-cog title-icon"></i>BRAIN File Normalization</h2>
-                <p class="text-muted">Normalize your BRAIN file format for standard reporting</p>
+                <h2><i class="fas fa-cog title-icon"></i>Normalization</h2>
             </div>
         </div>
         
@@ -359,7 +361,7 @@
         
         <div class="card">
             <div class="card-header">
-                <i class="fas fa-file-excel me-2"></i>Upload BRAIN File
+                <i class="fas fa-file-excel me-2"></i>Upload File
             </div>
             <div class="card-body">
                 <div class="upload-box">
@@ -381,17 +383,17 @@
                         </div>
                         <div class="mb-4">
                             <label for="br_file" class="form-label">
-                                <i class="fas fa-file-excel me-1"></i>Select BRAIN File
+                                <i class="fas fa-file-excel me-1"></i>Select File
                             </label>
                             <input class="form-control" type="file" name="br_file" id="br_file" 
                                 accept=".xlsx,.xls,.csv" required>
                         </div>
                         <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                             <a href="{{ route('excel.upload.form') }}" class="btn btn-secondary me-md-2">
-                                <i class="fas fa-home me-1"></i> Home
+                                <i class="fas fa-home me-1"></i>
                             </a>
                             <button type="submit" id="submitBtn" class="btn btn-primary">
-                                <i class="fas fa-cog me-1"></i> Normalize
+                                <i class="fas fa-cog me-1"></i> Process
                             </button>
                         </div>
                     </form>
@@ -406,7 +408,7 @@
             <div class="loading-spinner" id="loadingSpinner"></div>
             <div class="loading-title" id="loadingTitle">Normalizing File</div>
             <div class="loading-message" id="loadingMessage">
-                Please wait while your BRAIN file is being processed...
+                Please wait while your file is being processed...
             </div>
             <div class="loading-progress" id="loadingProgress">
                 <span class="dot"></span>
@@ -434,7 +436,7 @@
                 elapsedSeconds = 0;
                 $('#loadingCard').removeClass('success error');
                 $('#loadingTitle').text('Normalizing File');
-                $('#loadingMessage').text('Please wait while your BRAIN file is being processed...');
+                $('#loadingMessage').text('Please wait while your file is being processed...');
                 $('#loadingProgress').show();
                 $('#loadingTimer').text('Elapsed: 0s');
                 $('#loadingOverlay').addClass('active');

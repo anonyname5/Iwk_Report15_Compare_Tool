@@ -28,6 +28,9 @@
             background-color: var(--dark-color);
             padding: 1rem 2rem;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 1030;
         }
         
         .navbar-brand {
@@ -455,7 +458,7 @@
     <div class="main-container container">
         <div class="row mb-4">
             <div class="col">
-                <h2><i class="fas fa-file-upload title-icon"></i>Upload Excel Files</h2>
+                <h2><i class="fas fa-file-upload title-icon"></i>Upload Files</h2>
                 <p class="text-muted"></p>
             </div>
         </div>
@@ -485,7 +488,7 @@
                             @csrf
                             
                             <div class="mb-4">
-                                <label for="comparison_name" class="form-label">Comparison Name</label>
+                                <label for="comparison_name" class="form-label">File Name</label>
                                 <input type="text" class="form-control" id="comparison_name" name="comparison_name" 
                                     placeholder="Enter a name for this comparison" required>
                                 <div class="form-text"></div>
@@ -514,7 +517,7 @@
                                         <div class="file-upload-icon">
                                             <i class="fas fa-file-excel"></i>
                                         </div>
-                                        <h5>Upload BRAIN File</h5>
+                                        <h5>Upload File</h5>
                                         <p class="text-muted">Drag & drop or click to select</p>
                                         <input type="file" class="upload" id="file_1" name="file_1" accept=".xlsx, .xls" required>
                                         <div class="file-name" id="file-name-1"></div>
@@ -534,7 +537,7 @@
                                         <div class="file-upload-icon">
                                             <i class="fas fa-file-excel"></i>
                                         </div>
-                                        <h5>Upload BS File</h5>
+                                        <h5>Upload File</h5>
                                         <p class="text-muted">Drag & drop or click to select</p>
                                         <input type="file" class="upload" id="file_2" name="file_2" accept=".xlsx, .xls" required>
                                         <div class="file-name" id="file-name-2"></div>
@@ -544,13 +547,13 @@
                             
                             <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                                 <a href="{{ route('normalize.process') }}" class="btn btn-secondary me-md-2">
-                                    <i class="fas fa-cog me-1"></i> Normalize BRAIN Files
+                                    <i class="fas fa-cog me-1"></i> Normalize
                                 </a>
                                 <a href="{{ route('excel.index') }}" class="btn btn-secondary me-md-2">
-                                    <i class="fas fa-list me-1"></i> View Results
+                                    <i class="fas fa-list me-1"></i> Results
                                 </a>
                                 <button type="submit" id="submitBtn" class="btn btn-primary">
-                                    <i class="fas fa-upload me-1"></i> Upload & Process
+                                    <i class="fas fa-upload me-1"></i> Upload
                                 </button>
                             </div>
                         </form>
@@ -566,7 +569,7 @@
             <div class="loading-spinner-circle" id="loadingSpinner"></div>
             <div class="loading-title" id="loadingTitle">Processing Files</div>
             <div class="loading-message" id="loadingMessage">
-                Uploading and comparing your files. This may take a moment...
+                Uploading your files. This may take a moment...
             </div>
             <div class="loading-progress" id="loadingProgress">
                 <span class="dot"></span>

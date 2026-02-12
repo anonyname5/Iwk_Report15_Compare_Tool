@@ -323,70 +323,49 @@
             box-shadow: 0 4px 8px rgba(231, 76, 60, 0.3);
         }
         
+        .delete-modal .modal-content {
+            border-radius: 10px;
+        }
+        
         .delete-modal .modal-header {
-            background-color: var(--danger-color);
-            color: white;
-            border-bottom: none;
-        }
-        
-        .delete-modal .modal-header .btn-close {
-            filter: invert(1);
-        }
-        
-        .delete-modal .modal-body {
-            padding: 2rem;
-        }
-        
-        .delete-modal .modal-icon {
-            font-size: 4rem;
-            color: var(--danger-color);
-            margin-bottom: 1rem;
+            border-bottom: 1px solid #eee;
+            padding: 1rem 1.25rem;
         }
         
         .delete-modal .modal-title {
             font-weight: 600;
-            font-size: 1.5rem;
-        }
-        
-        .delete-modal .comparison-details {
-            background-color: rgba(0, 0, 0, 0.03);
-            border-radius: 8px;
-            padding: 1rem;
-            margin: 1rem 0;
-        }
-        
-        .delete-modal .comparison-details strong {
+            font-size: 1rem;
             color: var(--dark-color);
         }
         
-        .delete-modal .warning-text {
-            color: var(--danger-color);
-            font-weight: 500;
-            margin-top: 1rem;
+        .delete-modal .modal-body {
+            padding: 1.25rem;
+        }
+        
+        .delete-modal .modal-body p {
+            margin-bottom: 0;
+            color: #555;
+            font-size: 0.925rem;
+        }
+        
+        .delete-modal .modal-body .comparison-name {
+            font-weight: 600;
+            color: var(--dark-color);
+            word-break: break-all;
+            overflow-wrap: break-word;
         }
         
         .delete-modal .modal-footer {
-            border-top: none;
-            padding: 1.5rem 2rem;
-        }
-        
-        .delete-modal .btn-cancel {
-            background-color: #95a5a6;
-            border-color: #95a5a6;
-            color: white;
-        }
-        
-        .delete-modal .btn-cancel:hover {
-            background-color: #7f8c8d;
-            border-color: #7f8c8d;
-            color: white;
+            border-top: 1px solid #eee;
+            padding: 0.75rem 1.25rem;
         }
         
         .delete-modal .btn-confirm-delete {
             background-color: var(--danger-color);
             border-color: var(--danger-color);
             color: white;
-            font-weight: 600;
+            font-weight: 500;
+            font-size: 0.875rem;
         }
         
         .delete-modal .btn-confirm-delete:hover {
@@ -398,6 +377,100 @@
         .delete-modal .btn-confirm-delete:disabled {
             opacity: 0.6;
             cursor: not-allowed;
+        }
+        
+        /* Pagination Styles */
+        .pagination-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.25rem;
+            border-top: 1px solid rgba(0,0,0,0.05);
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+        
+        .pagination-info {
+            font-size: 0.875rem;
+            color: #6c757d;
+        }
+        
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .pagination-controls .btn-page {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+            background-color: #fff;
+            color: #495057;
+            font-weight: 500;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        
+        .pagination-controls .btn-page:hover:not(.active):not(:disabled) {
+            background-color: rgba(52, 152, 219, 0.1);
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+        
+        .pagination-controls .btn-page.active {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+            color: #fff;
+        }
+        
+        .pagination-controls .btn-page:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .pagination-controls .btn-page.btn-nav {
+            width: auto;
+            padding: 0 12px;
+            font-size: 0.8rem;
+        }
+        
+        .pagination-controls .page-ellipsis {
+            width: 36px;
+            text-align: center;
+            color: #6c757d;
+            font-weight: 500;
+            user-select: none;
+        }
+        
+        .per-page-select {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: #6c757d;
+        }
+        
+        .per-page-select select {
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 0.875rem;
+            color: #495057;
+            background-color: #fff;
+            cursor: pointer;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        
+        .per-page-select select:focus {
+            border-color: var(--primary-color);
         }
     </style>
 </head>
@@ -433,7 +506,7 @@
             </div>
         @endif
         
-        <h2 class="section-title">File Comparisons</h2>
+        <h2 class="section-title">Result List</h2>
         
         @if($comparisonPairs->count() > 0)
             <div class="card">
@@ -492,6 +565,24 @@
                             </tbody>
                         </table>
                     </div>
+                    
+                    <!-- Pagination -->
+                    <div class="pagination-wrapper" id="paginationWrapper">
+                        <div class="d-flex align-items-center gap-3 flex-wrap">
+                            <div class="pagination-info" id="paginationInfo"></div>
+                            <div class="per-page-select">
+                                <label for="perPageSelect">Rows per page:</label>
+                                <select id="perPageSelect">
+                                    <option value="5">5</option>
+                                    <option value="10" selected>10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="all">All</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="pagination-controls" id="paginationControls"></div>
+                    </div>
                 </div>
             </div>
         @else
@@ -510,47 +601,18 @@
     
     <!-- Delete Confirmation Modal -->
     <div class="modal fade delete-modal" id="deleteConfirmModal" tabindex="-1" aria-labelledby="deleteConfirmModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="deleteConfirmModalLabel">
-                        <i class="fas fa-exclamation-triangle me-2"></i>Confirm Deletion
-                    </h5>
+                    <h5 class="modal-title" id="deleteConfirmModalLabel">Delete Comparison</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body text-center">
-                    <div class="modal-icon">
-                        <i class="fas fa-trash-alt"></i>
-                    </div>
-                    <h5 class="modal-title mb-3">Are you sure you want to delete this comparison?</h5>
-                    <p class="text-muted mb-3">This action will permanently delete the comparison and cannot be undone.</p>
-                    
-                    <div class="comparison-details text-start">
-                        <div class="mb-2">
-                            <strong>Comparison Name:</strong>
-                            <span id="modalComparisonName" class="ms-2"></span>
-                        </div>
-                        <div class="mb-2">
-                            <strong>Files to be deleted:</strong>
-                            <ul class="mb-0 mt-2">
-                                <li id="modalFile1" class="text-muted"></li>
-                                <li id="modalFile2" class="text-muted"></li>
-                            </ul>
-                        </div>
-                    </div>
-                    
-                    <p class="warning-text">
-                        <i class="fas fa-exclamation-circle me-1"></i>
-                        This action cannot be undone!
-                    </p>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete <span id="modalComparisonName" class="comparison-name"></span>?</p>
                 </div>
-                <div class="modal-footer justify-content-center">
-                    <button type="button" class="btn btn-cancel" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-1"></i> Cancel
-                    </button>
-                    <button type="button" class="btn btn-confirm-delete" id="confirmDeleteBtn">
-                        <i class="fas fa-trash-alt me-1"></i> Delete Comparison
-                    </button>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-sm btn-confirm-delete" id="confirmDeleteBtn">Delete</button>
                 </div>
             </div>
         </div>
@@ -575,7 +637,7 @@
             };
             
             // Handle download button clicks - show loading spinner until download finishes
-            $('.btn-download').on('click', function(e) {
+            $(document).on('click', '.btn-download', function(e) {
                 e.preventDefault();
                 
                 var $button = $(this);
@@ -634,17 +696,13 @@
                     });
             });
             
-            // Handle delete button clicks
-            $('.btn-delete').on('click', function(e) {
+            // Handle delete button clicks (use event delegation for pagination compatibility)
+            $(document).on('click', '.btn-delete', function(e) {
                 e.preventDefault();
                 
                 var $button = $(this);
                 var $row = $button.closest('tr');
                 var comparisonName = $button.data('comparison-name');
-                
-                // Get file names from the row
-                var file1Name = $row.find('td:eq(1)').text().trim().replace(/^\d+\s*/, '');
-                var file2Name = $row.find('td:eq(2)').text().trim().replace(/^\d+\s*/, '');
                 
                 // Store context
                 deleteContext.button = $button;
@@ -652,15 +710,13 @@
                 deleteContext.comparisonName = comparisonName;
                 deleteContext.originalHtml = $button.html();
                 
-                // Populate modal with data
+                // Populate modal
                 $('#modalComparisonName').text(comparisonName);
-                $('#modalFile1').html('<i class="fas fa-file-excel text-primary me-1"></i>' + file1Name);
-                $('#modalFile2').html('<i class="fas fa-file-excel text-success me-1"></i>' + file2Name);
                 
                 // Reset confirm button
                 var $confirmBtn = $('#confirmDeleteBtn');
                 $confirmBtn.prop('disabled', false);
-                $confirmBtn.html('<i class="fas fa-trash-alt me-1"></i> Delete Comparison');
+                $confirmBtn.html('Delete');
                 
                 // Show modal
                 var deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
@@ -676,7 +732,7 @@
                 
                 // Disable confirm button and show loading state
                 $confirmBtn.prop('disabled', true);
-                $confirmBtn.html('<i class="fas fa-spinner fa-spin me-1"></i> Deleting...');
+                $confirmBtn.html('<i class="fas fa-spinner fa-spin"></i>');
                 
                 // Also disable the original delete button
                 if ($button) {
@@ -717,12 +773,15 @@
                                 // Check if table is empty
                                 if ($('tbody tr').length === 0) {
                                     location.reload();
+                                } else {
+                                    // Refresh pagination after row removal
+                                    updatePagination();
                                 }
                             });
                         } else {
                             showError(response.message || 'Failed to delete comparison');
                             $confirmBtn.prop('disabled', false);
-                            $confirmBtn.html('<i class="fas fa-trash-alt me-1"></i> Delete Comparison');
+                            $confirmBtn.html('Delete');
                             if ($button) {
                                 $button.prop('disabled', false);
                                 $button.html(deleteContext.originalHtml);
@@ -741,7 +800,7 @@
                         
                         showError(errorMsg);
                         $confirmBtn.prop('disabled', false);
-                        $confirmBtn.html('<i class="fas fa-trash-alt me-1"></i> Delete Comparison');
+                        $confirmBtn.html('Delete');
                         if ($button) {
                             $button.prop('disabled', false);
                             $button.html(deleteContext.originalHtml);
@@ -754,7 +813,7 @@
             $('#deleteConfirmModal').on('hidden.bs.modal', function () {
                 var $confirmBtn = $('#confirmDeleteBtn');
                 $confirmBtn.prop('disabled', false);
-                $confirmBtn.html('<i class="fas fa-trash-alt me-1"></i> Delete Comparison');
+                $confirmBtn.html('Delete');
                 
                 // Reset delete context
                 if (deleteContext.button) {
@@ -762,6 +821,147 @@
                     deleteContext.button.html(deleteContext.originalHtml);
                 }
             });
+            
+            // ===== Pagination Logic =====
+            var currentPage = 1;
+            var rowsPerPage = 10;
+            var $tableBody = $('table.table tbody');
+            var $allRows = $tableBody.find('tr');
+            var totalRows = $allRows.length;
+            
+            function getTotalPages() {
+                if (rowsPerPage === 'all') return 1;
+                return Math.ceil(totalRows / rowsPerPage);
+            }
+            
+            function updatePagination() {
+                // Recount rows (some may have been deleted)
+                $allRows = $tableBody.find('tr');
+                totalRows = $allRows.length;
+                
+                if (totalRows === 0) {
+                    $('#paginationWrapper').hide();
+                    return;
+                }
+                
+                var totalPages = getTotalPages();
+                
+                // Ensure currentPage is valid
+                if (currentPage > totalPages) currentPage = totalPages;
+                if (currentPage < 1) currentPage = 1;
+                
+                // Show/hide rows
+                $allRows.each(function(index) {
+                    if (rowsPerPage === 'all') {
+                        $(this).show();
+                    } else {
+                        var start = (currentPage - 1) * rowsPerPage;
+                        var end = start + rowsPerPage;
+                        if (index >= start && index < end) {
+                            $(this).show();
+                        } else {
+                            $(this).hide();
+                        }
+                    }
+                });
+                
+                // Update info text
+                if (rowsPerPage === 'all') {
+                    $('#paginationInfo').text('Showing all ' + totalRows + ' entries');
+                } else {
+                    var start = (currentPage - 1) * rowsPerPage + 1;
+                    var end = Math.min(currentPage * rowsPerPage, totalRows);
+                    $('#paginationInfo').text('Showing ' + start + ' to ' + end + ' of ' + totalRows + ' entries');
+                }
+                
+                // Build pagination controls
+                var $controls = $('#paginationControls');
+                $controls.empty();
+                
+                if (totalPages <= 1) {
+                    return;
+                }
+                
+                // Previous button
+                var $prev = $('<button class="btn-page btn-nav" ' + (currentPage === 1 ? 'disabled' : '') + '><i class="fas fa-chevron-left"></i></button>');
+                $prev.on('click', function() {
+                    if (currentPage > 1) {
+                        currentPage--;
+                        updatePagination();
+                    }
+                });
+                $controls.append($prev);
+                
+                // Page numbers with ellipsis
+                var pages = generatePageNumbers(currentPage, totalPages);
+                pages.forEach(function(page) {
+                    if (page === '...') {
+                        $controls.append('<span class="page-ellipsis">...</span>');
+                    } else {
+                        var $btn = $('<button class="btn-page ' + (page === currentPage ? 'active' : '') + '">' + page + '</button>');
+                        $btn.on('click', function() {
+                            currentPage = page;
+                            updatePagination();
+                        });
+                        $controls.append($btn);
+                    }
+                });
+                
+                // Next button
+                var $next = $('<button class="btn-page btn-nav" ' + (currentPage === totalPages ? 'disabled' : '') + '><i class="fas fa-chevron-right"></i></button>');
+                $next.on('click', function() {
+                    if (currentPage < totalPages) {
+                        currentPage++;
+                        updatePagination();
+                    }
+                });
+                $controls.append($next);
+            }
+            
+            function generatePageNumbers(current, total) {
+                var pages = [];
+                if (total <= 7) {
+                    for (var i = 1; i <= total; i++) pages.push(i);
+                    return pages;
+                }
+                
+                // Always show first page
+                pages.push(1);
+                
+                if (current > 3) {
+                    pages.push('...');
+                }
+                
+                // Pages around current
+                var startPage = Math.max(2, current - 1);
+                var endPage = Math.min(total - 1, current + 1);
+                
+                for (var i = startPage; i <= endPage; i++) {
+                    pages.push(i);
+                }
+                
+                if (current < total - 2) {
+                    pages.push('...');
+                }
+                
+                // Always show last page
+                pages.push(total);
+                
+                return pages;
+            }
+            
+            // Per-page selector change
+            $('#perPageSelect').on('change', function() {
+                var val = $(this).val();
+                rowsPerPage = val === 'all' ? 'all' : parseInt(val);
+                currentPage = 1;
+                updatePagination();
+            });
+            
+            // Initialize pagination
+            if (totalRows > 0) {
+                updatePagination();
+            }
             
             function showError(message) {
                 var alertHtml = '<div class="alert alert-danger alert-dismissible fade show" role="alert">' +
