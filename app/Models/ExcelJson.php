@@ -50,6 +50,9 @@ class ExcelJson extends Model
             ->distinct()
             ->pluck('comparison_name');
             
+        // Financial fields to compare (same as ComparisonService)
+        $financialFields = ['billing_total', 'receipts_total', 'crbal_total', 'no_accounts', 'outstanding_balance', 'current_no_accounts', 'current_balance'];
+            
         // For each comparison name, get file_1 and file_2
         $pairs = collect();
         
@@ -63,55 +66,124 @@ class ExcelJson extends Model
                 ->first();
                 
             if ($file1 && $file2) {
-                // Check if there are differences by doing a basic comparison
-                $hasChanges = false;
+                $totalFields = 0;
+                $matchingFields = 0;
                 
-                // Check if cost centers exist in both files
+                // Compare cost centers
                 $costCenters1 = collect($file1->data['cost_centers'] ?? []);
                 $costCenters2 = collect($file2->data['cost_centers'] ?? []);
                 
-                $codes1 = $costCenters1->pluck('code')->toArray();
-                $codes2 = $costCenters2->pluck('code')->toArray();
+                // Get all unique cost center codes
+                $allCodes = $costCenters1->pluck('code')
+                    ->merge($costCenters2->pluck('code'))
+                    ->unique();
                 
-                // If cost centers differ between files, that means there are changes
-                // (missing cost centers are treated as having zero values during comparison)
-                if (count(array_diff($codes1, $codes2)) > 0 || count(array_diff($codes2, $codes1)) > 0) {
-                    $hasChanges = true;
-                }
-                
-                // Check for value changes across all cost centers
-                if (!$hasChanges) {
-                    foreach ($costCenters1 as $cc1) {
-                        $cc2 = $costCenters2->firstWhere('code', $cc1['code']);
-                        if ($cc2) {
-                            // Just check if main_total values differ for any field
-                            foreach ($cc1['main_descriptions'] ?? [] as $md1) {
-                                $md2 = collect($cc2['main_descriptions'] ?? [])->firstWhere('name', $md1['name']);
-                                if ($md2 && isset($md1['main_total']) && isset($md2['main_total'])) {
-                                    $total1 = $md1['main_total'];
-                                    $total2 = $md2['main_total'];
-                                    
-                                    // Check basic financial fields
-                                    $fields = ['billing_total', 'receipts_total', 'outstanding_balance'];
-                                    foreach ($fields as $field) {
-                                        if (isset($total1[$field]) && isset($total2[$field]) && 
-                                            $total1[$field] != $total2[$field]) {
-                                            $hasChanges = true;
-                                            break 3; // Break out of all loops once we find a change
-                                        }
-                                    }
-                                }
+                foreach ($allCodes as $code) {
+                    $cc1 = $costCenters1->firstWhere('code', $code);
+                    $cc2 = $costCenters2->firstWhere('code', $code);
+                    
+                    $descriptions1 = collect($cc1['main_descriptions'] ?? []);
+                    $descriptions2 = collect($cc2['main_descriptions'] ?? []);
+                    
+                    // Get all unique description names
+                    $allDescNames = $descriptions1->pluck('name')
+                        ->merge($descriptions2->pluck('name'))
+                        ->unique();
+                    
+                    foreach ($allDescNames as $descName) {
+                        $md1 = $descriptions1->firstWhere('name', $descName);
+                        $md2 = $descriptions2->firstWhere('name', $descName);
+                        
+                        $total1 = $md1['main_total'] ?? [];
+                        $total2 = $md2['main_total'] ?? [];
+                        
+                        // Compare basic financial fields
+                        foreach ($financialFields as $field) {
+                            $totalFields++;
+                            $val1 = $total1[$field] ?? 0;
+                            $val2 = $total2[$field] ?? 0;
+                            if ($val1 == $val2) {
+                                $matchingFields++;
+                            }
+                        }
+                        
+                        // Compare aging data
+                        $aging1 = $total1['aging'] ?? [];
+                        $aging2 = $total2['aging'] ?? [];
+                        $allPeriods = array_unique(array_merge(array_keys($aging1), array_keys($aging2)));
+                        
+                        foreach ($allPeriods as $period) {
+                            $a1 = $aging1[$period] ?? ['no_accounts' => 0, 'balance' => 0];
+                            $a2 = $aging2[$period] ?? ['no_accounts' => 0, 'balance' => 0];
+                            
+                            // no_accounts
+                            $totalFields++;
+                            if (($a1['no_accounts'] ?? 0) == ($a2['no_accounts'] ?? 0)) {
+                                $matchingFields++;
+                            }
+                            // balance
+                            $totalFields++;
+                            if (($a1['balance'] ?? 0) == ($a2['balance'] ?? 0)) {
+                                $matchingFields++;
                             }
                         }
                     }
                 }
+                
+                // Also compare overall_totals
+                $overallTotals1 = collect($file1->data['overall_totals'] ?? []);
+                $overallTotals2 = collect($file2->data['overall_totals'] ?? []);
+                $allOverallNames = $overallTotals1->pluck('name')
+                    ->merge($overallTotals2->pluck('name'))
+                    ->unique();
+                
+                foreach ($allOverallNames as $otName) {
+                    $ot1 = $overallTotals1->firstWhere('name', $otName);
+                    $ot2 = $overallTotals2->firstWhere('name', $otName);
+                    
+                    $total1 = $ot1['main_total'] ?? [];
+                    $total2 = $ot2['main_total'] ?? [];
+                    
+                    foreach ($financialFields as $field) {
+                        $totalFields++;
+                        if (($total1[$field] ?? 0) == ($total2[$field] ?? 0)) {
+                            $matchingFields++;
+                        }
+                    }
+                    
+                    $aging1 = $total1['aging'] ?? [];
+                    $aging2 = $total2['aging'] ?? [];
+                    $allPeriods = array_unique(array_merge(array_keys($aging1), array_keys($aging2)));
+                    
+                    foreach ($allPeriods as $period) {
+                        $a1 = $aging1[$period] ?? ['no_accounts' => 0, 'balance' => 0];
+                        $a2 = $aging2[$period] ?? ['no_accounts' => 0, 'balance' => 0];
+                        
+                        $totalFields++;
+                        if (($a1['no_accounts'] ?? 0) == ($a2['no_accounts'] ?? 0)) {
+                            $matchingFields++;
+                        }
+                        $totalFields++;
+                        if (($a1['balance'] ?? 0) == ($a2['balance'] ?? 0)) {
+                            $matchingFields++;
+                        }
+                    }
+                }
+                
+                // Calculate percentages
+                $matchPercent = $totalFields > 0 ? round(($matchingFields / $totalFields) * 100, 1) : 100;
+                $diffPercent = round(100 - $matchPercent, 1);
                 
                 $pairs->push([
                     'comparison_name' => $name,
                     'file1' => $file1,
                     'file2' => $file2,
                     'created_at' => $file1->created_at,
-                    'has_changes' => $hasChanges,
+                    'has_changes' => $diffPercent > 0,
+                    'match_percent' => $matchPercent,
+                    'diff_percent' => $diffPercent,
+                    'total_fields' => $totalFields,
+                    'matching_fields' => $matchingFields,
                     'missing_cost_centers' => false
                 ]);
             }
