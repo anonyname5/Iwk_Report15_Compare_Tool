@@ -275,6 +275,33 @@
             white-space: nowrap;
         }
         
+        .match-rate-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 120px;
+        }
+        
+        .match-rate-bar {
+            flex: 1;
+            height: 6px;
+            background-color: #eee;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        
+        .match-rate-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        
+        .match-rate-text {
+            font-weight: 600;
+            font-size: 0.825rem;
+            white-space: nowrap;
+        }
+        
         .status-badge-success {
             background-color: rgba(46, 204, 113, 0.15);
             color: #27ae60;
@@ -516,10 +543,11 @@
                             <thead>
                                 <tr>
                                     <th>Comparison Name</th>
-                                    <th>BRAIN File</th>
-                                    <th>BS File</th>
+                                    <th>File 1</th>
+                                    <th>File 2</th>
                                     <th>Date</th>
                                     <th>Status</th>
+                                    <th>Match Rate</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
@@ -528,11 +556,11 @@
                                     <tr>
                                         <td>{{ $pair['comparison_name'] }}</td>
                                         <td class="text-truncate" style="max-width: 250px;" title="{{ $pair['file1']->file_name }}">
-                                            <span class="badge bg-primary text-white me-1">1</span>
+                                            <span class="badge bg-primary text-white me-1 rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 22px; height: 22px; font-size: 0.7rem;">1</span>
                                             {{ $pair['file1']->file_name }}
                                         </td>
                                         <td class="text-truncate" style="max-width: 250px;" title="{{ $pair['file2']->file_name }}">
-                                            <span class="badge bg-success text-white me-1">2</span>
+                                            <span class="badge bg-success text-white me-1 rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 22px; height: 22px; font-size: 0.7rem;">2</span>
                                             {{ $pair['file2']->file_name }}
                                         </td>
                                         <td>{{ $pair['created_at']->format('M d, Y') }}</td>
@@ -542,6 +570,14 @@
                                             @else
                                                 <span class="status-badge status-badge-success">No Changes</span>
                                             @endif
+                                        </td>
+                                        <td>
+                                            <div class="match-rate-wrapper" title="{{ $pair['matching_fields'] }} of {{ $pair['total_fields'] }} fields match">
+                                                <div class="match-rate-bar">
+                                                    <div class="match-rate-fill" style="width: {{ $pair['match_percent'] }}%; background-color: {{ $pair['match_percent'] == 100 ? '#2ecc71' : ($pair['match_percent'] >= 90 ? '#f39c12' : '#e74c3c') }};"></div>
+                                                </div>
+                                                <span class="match-rate-text" style="color: {{ $pair['match_percent'] == 100 ? '#27ae60' : ($pair['match_percent'] >= 90 ? '#e67e22' : '#e74c3c') }};">{{ $pair['match_percent'] }}%</span>
+                                            </div>
                                         </td>
                                         <td>
                                             <div class="btn-group-actions">
