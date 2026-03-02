@@ -62,27 +62,45 @@ class ExcelController extends Controller
             'comparison_name' => 'required|string|max:255',
         ]);
 
+        $tempNormalizedFiles = [];
+
         try {
+            $uploadStart = microtime(true);
             $comparisonName = $request->input('comparison_name');
             $includeCst = $request->has('include_cst') && $request->input('include_cst') == '1';
             
-            Log::info('Processing files with include_cst: ' . ($includeCst ? 'true' : 'false'));
+            Log::info('Upload pipeline started', [
+                'comparison_name' => $comparisonName,
+                'include_cst' => $includeCst
+            ]);
             
             $files = [];
             $fileIds = [];
+            $parserService = new ExcelParserService();
+            $normalizationController = app(NormalizationController::class);
             
             // Process file 1
             $file1 = $request->file('file_1');
             $filename1 = $file1->getClientOriginalName();
-            $filePath1 = $file1->getPathname();
+            $baseFilename1 = pathinfo($filename1, PATHINFO_FILENAME);
             
-            Log::debug('Starting to process 1st Excel file: ' . $filename1);
-            
-            $parserService = new ExcelParserService();
-            $structuredData1 = $parserService->parse($filePath1, $includeCst);
+            // Normalize before parsing/comparing
+            $normalizeFile1Start = microtime(true);
+            $normalizedPath1 = $normalizationController->normalizeBrFile($file1, $baseFilename1, $includeCst, false);
+            $tempNormalizedFiles[] = $normalizedPath1;
+            Log::info('File 1 normalized', [
+                'file_name' => $filename1,
+                'duration_ms' => (int) round((microtime(true) - $normalizeFile1Start) * 1000)
+            ]);
+
+            $parseFile1Start = microtime(true);
+            $structuredData1 = $parserService->parse($normalizedPath1, $includeCst);
+            Log::info('File 1 parsed', [
+                'file_name' => $filename1,
+                'duration_ms' => (int) round((microtime(true) - $parseFile1Start) * 1000)
+            ]);
             
             $costCentersCount1 = count($structuredData1['cost_centers'] ?? []);
-            Log::debug('Total cost centers found in file 1: ' . $costCentersCount1);
             
             // Save file 1 to DB
             $excelModel1 = ExcelJson::create([
@@ -102,14 +120,25 @@ class ExcelController extends Controller
             // Process file 2
             $file2 = $request->file('file_2');
             $filename2 = $file2->getClientOriginalName();
-            $filePath2 = $file2->getPathname();
+            $baseFilename2 = pathinfo($filename2, PATHINFO_FILENAME);
             
-            Log::debug('Starting to process 2nd Excel file: ' . $filename2);
-            
-            $structuredData2 = $parserService->parse($filePath2, $includeCst);
+            // Normalize before parsing/comparing
+            $normalizeFile2Start = microtime(true);
+            $normalizedPath2 = $normalizationController->normalizeBrFile($file2, $baseFilename2, $includeCst, false);
+            $tempNormalizedFiles[] = $normalizedPath2;
+            Log::info('File 2 normalized', [
+                'file_name' => $filename2,
+                'duration_ms' => (int) round((microtime(true) - $normalizeFile2Start) * 1000)
+            ]);
+
+            $parseFile2Start = microtime(true);
+            $structuredData2 = $parserService->parse($normalizedPath2, $includeCst);
+            Log::info('File 2 parsed', [
+                'file_name' => $filename2,
+                'duration_ms' => (int) round((microtime(true) - $parseFile2Start) * 1000)
+            ]);
             
             $costCentersCount2 = count($structuredData2['cost_centers'] ?? []);
-            Log::debug('Total cost centers found in file 2: ' . $costCentersCount2);
             
             // Save file 2 to DB
             $excelModel2 = ExcelJson::create([
@@ -135,13 +164,18 @@ class ExcelController extends Controller
                     'files' => $files,
                     'file_ids' => $fileIds,
                     'success' => true,
+                    'download_url' => route('excel.compare', $comparisonName),
                     'redirect' => route('excel.index')
                 ]);
             }
             
-            // For regular form submission, redirect to the list page with a success message
-            return redirect()->route('excel.index')
-                ->with('success', 'Files uploaded and processed successfully.');
+            Log::info('Upload pipeline completed', [
+                'comparison_name' => $comparisonName,
+                'duration_ms' => (int) round((microtime(true) - $uploadStart) * 1000)
+            ]);
+
+            // For regular form submission, go straight to download
+            return redirect()->route('excel.compare', $comparisonName);
 
         } catch (\Exception $e) {
             Log::error('Excel processing error: ' . $e->getMessage());
@@ -155,6 +189,12 @@ class ExcelController extends Controller
             
             return redirect()->back()
                 ->with('error', 'Error processing Excel files: ' . $e->getMessage());
+        } finally {
+            foreach ($tempNormalizedFiles as $path) {
+                if (is_string($path) && file_exists($path)) {
+                    @unlink($path);
+                }
+            }
         }
     }
     
@@ -167,6 +207,7 @@ class ExcelController extends Controller
     public function compare($comparisonName)
     {
         try {
+            $comparePipelineStart = microtime(true);
             // Find the pair of files with the given comparison name
             $file1 = ExcelJson::where('comparison_name', $comparisonName)
                 ->where('file_type', 'file_1')
@@ -177,12 +218,27 @@ class ExcelController extends Controller
                 ->firstOrFail();
             
             // Use the ComparisonService to generate comparison data
+            $comparisonStart = microtime(true);
             $comparisonService = new ComparisonService();
             $comparisonData = $comparisonService->compare($file1, $file2);
+            Log::info('Comparison data generated', [
+                'comparison_name' => $comparisonName,
+                'duration_ms' => (int) round((microtime(true) - $comparisonStart) * 1000)
+            ]);
             
             // Use the ExcelExportService to export data to Excel in original format
+            $exportStart = microtime(true);
             $excelExportService = new ExcelExportService();
             $filepath = $excelExportService->exportOriginalFormat($comparisonData, $file1, $file2);
+            Log::info('Comparison file exported', [
+                'comparison_name' => $comparisonName,
+                'duration_ms' => (int) round((microtime(true) - $exportStart) * 1000)
+            ]);
+
+            Log::info('Compare pipeline completed', [
+                'comparison_name' => $comparisonName,
+                'duration_ms' => (int) round((microtime(true) - $comparePipelineStart) * 1000)
+            ]);
             
             // Return file for download
             return response()->download($filepath, $comparisonData['comparison_name'] . '.xlsx', [
