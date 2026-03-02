@@ -161,18 +161,11 @@ class ExcelParserService
         for ($i = 7; $i <= count($rows); $i++) {
             $row = $rows[$i] ?? null;
             if (!$row || empty($row['A'])) {
-                Log::debug('Skipping empty row', ['row_number' => $i]);
                 continue;
             }
 
             $descText = trim($row['A']);
             $costCenter = trim($row['B'] ?? '');
-            
-            Log::debug('Processing row', [
-                'row_number' => $i,
-                'description' => $descText,
-                'cost_center' => $costCenter
-            ]);
 
             // Check for Cost Center Report Totals
             if (empty($costCenter) && (
@@ -418,12 +411,6 @@ class ExcelParserService
 
     private function parseFinancialData($row)
     {
-        Log::debug('Parsing financial data', [
-            'row_data' => array_map(function($value) {
-                return is_numeric($value) ? (float)str_replace(',', '', $value) : $value;
-            }, $row)
-        ]);
-
         return [
             'billing_total' => (float) (str_replace(',', '', $row['C'] ?? 0)),
             'receipts_total' => (float) (str_replace(',', '', $row['D'] ?? 0)),

@@ -205,7 +205,7 @@ class NormalizationController extends Controller
         }
     }
 
-    private function normalizeBrFile($file, $originalFileName = null, $includeCst = false)
+    public function normalizeBrFile($file, $originalFileName = null, $includeCst = false, $applyFormatting = true)
     {
         Log::info('Loading Excel file into array');
         
@@ -321,7 +321,7 @@ class NormalizationController extends Controller
             }
 
             Log::info('Total normalized data rows: ' . count($normalizedData));
-            return $this->exportNormalizedFile($headerRows, $normalizedData, $originalFileName);
+            return $this->exportNormalizedFile($headerRows, $normalizedData, $originalFileName, $applyFormatting);
         } catch (\Exception $e) {
             Log::error('Processing failed: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
@@ -612,7 +612,7 @@ class NormalizationController extends Controller
         return $row;
     }
 
-    private function exportNormalizedFile($headers, $data, $originalFileName = null)
+    private function exportNormalizedFile($headers, $data, $originalFileName = null, $applyFormatting = true)
     {
         // Create a filename using the original filename if provided, otherwise use timestamp
         if ($originalFileName) {
@@ -657,9 +657,11 @@ class NormalizationController extends Controller
             if (Storage::disk('public')->exists($filename)) {
                 Log::info('Verified file exists in storage');
                 
-                // Apply formatting to the saved file
-                $this->applyFormattingToExcel($filePath);
-                Log::info('Applied formatting to the Excel file');
+                if ($applyFormatting) {
+                    // Apply formatting to the saved file
+                    $this->applyFormattingToExcel($filePath);
+                    Log::info('Applied formatting to the Excel file');
+                }
             } else {
                 Log::error('File verification failed - file does not exist in storage');
             }

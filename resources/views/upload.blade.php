@@ -667,12 +667,54 @@
                     },
                     success: function(response) {
                         if (response.success) {
-                            hideLoading('success', 'Processing Complete!', 'Files compared successfully. Redirecting to results...');
-                                
-                            // Redirect after showing success state
-                            setTimeout(function() {
-                                window.location.href = response.redirect || "{{ route('excel.index') }}";
-                            }, 2000);
+                            hideLoading('success', 'Processing Complete!', 'Files normalized and compared. Download is starting...');
+
+                            var downloadUrl = response.download_url;
+                            var resultsUrl = response.redirect || "{{ route('excel.index') }}";
+
+                            if (downloadUrl) {
+                                fetch(downloadUrl)
+                                    .then(function(downloadResponse) {
+                                        if (!downloadResponse.ok) {
+                                            throw new Error('Failed to download comparison file.');
+                                        }
+
+                                        var disposition = downloadResponse.headers.get('Content-Disposition');
+                                        var filename = (response.comparison_name || 'comparison') + '.xlsx';
+                                        if (disposition && disposition.indexOf('filename=') !== -1) {
+                                            var matches = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                                            if (matches && matches[1]) {
+                                                filename = matches[1].replace(/['"]/g, '');
+                                            }
+                                        }
+
+                                        return downloadResponse.blob().then(function(blob) {
+                                            return { blob: blob, filename: filename };
+                                        });
+                                    })
+                                    .then(function(result) {
+                                        var blobUrl = window.URL.createObjectURL(result.blob);
+                                        var a = document.createElement('a');
+                                        a.href = blobUrl;
+                                        a.download = result.filename;
+                                        document.body.appendChild(a);
+                                        a.click();
+                                        a.remove();
+                                        window.URL.revokeObjectURL(blobUrl);
+                                    })
+                                    .catch(function(error) {
+                                        console.error('Download error:', error);
+                                    })
+                                    .finally(function() {
+                                        setTimeout(function() {
+                                            window.location.href = resultsUrl;
+                                        }, 1000);
+                                    });
+                            } else {
+                                setTimeout(function() {
+                                    window.location.href = resultsUrl;
+                                }, 1000);
+                            }
                         }
                     },
                     error: function(xhr) {
