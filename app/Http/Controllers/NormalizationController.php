@@ -927,6 +927,8 @@ class NormalizationController extends Controller
                         // Create empty row (all zeros instead of blanks)
                         $newRow = array_fill(0, self::TOTAL_COLUMNS, 0);
                         $newRow[0] = $requiredSub;
+                        // Overall totals rows must not have a cost center code
+                        $newRow[1] = '';
                         
                         // Important: Set all financial columns to 0 explicitly to avoid using past values
                         for ($i = self::FINANCE_COL_START; $i < self::TOTAL_COLUMNS; $i++) {
